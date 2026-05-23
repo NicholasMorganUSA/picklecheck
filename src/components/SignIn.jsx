@@ -54,13 +54,13 @@ export default function SignIn() {
         <a
           href="/demo"
           style={{
-            marginTop: '18px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'transparent', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.14)',
-            borderRadius: '14px', padding: '12px 18px', fontSize: '14px', fontWeight: 600, fontFamily: BODY,
-            textDecoration: 'none',
+            marginTop: '18px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.5)',
+            borderRadius: '14px', padding: '14px 18px', fontSize: '15px', fontWeight: 700, fontFamily: BODY,
+            textDecoration: 'none', boxShadow: '0 0 16px rgba(197,229,0,0.18)',
           }}
         >
-          I just want to see the app &rarr;
+          See the demo &rarr;
         </a>
       </div>
     </div>
