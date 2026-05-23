@@ -413,7 +413,7 @@ const IconButton = ({ children, onClick, label }) => (
 // ────────────────────────────────────────────────────────────────────
 // TOP BAR
 // ────────────────────────────────────────────────────────────────────
-const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, filterGroupName, onClearFilter, showBackButton, onBackToDefault }) => {
+const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, isFiltered, onClearFilter, showBackButton, onBackToDefault }) => {
   const showToggle = view === 'today' || view === 'week';
   return (
     <div className="space-y-2 pt-1 pb-1">
@@ -436,10 +436,10 @@ const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, filterGroupN
               <Undo2 size={11} />NEXT UP
             </button>
           )}
-          {filterGroupName && (
-            <button onClick={onClearFilter} className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold"
-              style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-strong)' }}>
-              {filterGroupName}<X size={11} />
+          {isFiltered && (
+            <button onClick={onClearFilter} className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide"
+              style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.4)', boxShadow: '0 0 10px rgba(197,229,0,0.2)' }}>
+              FILTERED<X size={11} />
             </button>
           )}
         </div>
@@ -487,14 +487,15 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       {/* Header — group name above, date+time centered with nav arrows, location below */}
       <div className="px-5 pt-4 pb-3 text-center">
         <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{groupName}</div>
-        <div className="flex items-center justify-center gap-1.5">
-          {interactive && (
-            <button onClick={onPrev} disabled={!canPrev} aria-label="Previous session"
-              className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
-              <ChevronLeft size={22} />
-            </button>
-          )}
-          <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
+        <div className="flex items-center justify-between gap-1">
+          {interactive
+            ? (
+              <button onClick={onPrev} disabled={!canPrev} aria-label="Previous session"
+                className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
+                <ChevronLeft size={22} />
+              </button>
+            ) : <span className="w-7 flex-shrink-0" />}
+          <div className="flex-1 text-center" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
             {(context === 'TODAY' || context === 'TOMORROW') ? (
               <>
                 <span style={{ color: '#c5e500' }}>{context}</span>
@@ -506,12 +507,13 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
               </span>
             )}
           </div>
-          {interactive && (
-            <button onClick={onNext} disabled={!canNext} aria-label="Next session"
-              className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
-              <ChevR size={22} />
-            </button>
-          )}
+          {interactive
+            ? (
+              <button onClick={onNext} disabled={!canNext} aria-label="Next session"
+                className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
+                <ChevR size={22} />
+              </button>
+            ) : <span className="w-7 flex-shrink-0" />}
         </div>
         {location && (
           <div className="text-[12px] mt-1 flex items-center justify-center gap-1"
@@ -853,7 +855,7 @@ const WeekView = ({ sessions, onSelect }) => {
 // ────────────────────────────────────────────────────────────────────
 // GROUPS MENU
 // ────────────────────────────────────────────────────────────────────
-const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, onInviteMember, isDemo = false }) => {
+const GroupsMenu = ({ open, onClose, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, onInviteMember, isDemo = false }) => {
   const allIds = groups.map((g) => g.id);
   const allVisible = allIds.every(id => visibleGroups.has(id));
   const noneVisible = visibleGroups.size === 0;
@@ -878,7 +880,7 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
           </button>
         </div>
         <div className="text-[11px] text-zinc-500 mb-3 leading-snug">
-          Tap a group to filter your feed. Toggle the dot to show or hide a group in your default list.
+          Tap a group to show or hide it in your feed. Use Select all / Clear to bulk-toggle.
         </div>
         <div className="flex gap-2 mb-3">
           <button onClick={() => setVisibleGroups(new Set(allIds))}
@@ -905,8 +907,9 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
                 boxShadow: isVisible ? '0 0 14px rgba(197,229,0,0.08)' : 'none',
                 opacity: isVisible ? 1 : 0.6,
               }}>
-              <div className="flex items-stretch">
-                <button onClick={() => onFilter(g.id)} className="flex-1 text-left p-3.5 min-w-0">
+              <button onClick={() => toggle(g.id)} className="w-full flex items-center gap-3 text-left p-3.5 min-w-0"
+                aria-label={isVisible ? `Hide ${g.name} from feed` : `Show ${g.name} in feed`}>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="text-base font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
                     {g.role === 'admin' && (
@@ -918,19 +921,14 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
                   </div>
                   <div className="text-[11px] text-zinc-500">{g.schedule || g.location || 'No schedule yet'}</div>
                   <div className="text-[11px] text-zinc-600 mt-0.5">{g.members ?? 0} members</div>
-                </button>
-                <button onClick={() => toggle(g.id)}
-                  className="flex items-center justify-center px-3 transition-all"
-                  style={{ borderLeft: '1px solid var(--border-subtle)' }}
-                  aria-label={isVisible ? 'Hide from feed' : 'Show in feed'}>
-                  <div className="w-5 h-5 rounded-full transition-all"
-                    style={{
-                      background: isVisible ? '#c5e500' : 'transparent',
-                      border: isVisible ? '1px solid var(--text-tertiary)' : '1.5px solid var(--text-faint)',
-                      boxShadow: isVisible ? '0 0 10px rgba(197,229,0,0.55)' : 'none',
-                    }} />
-                </button>
-              </div>
+                </div>
+                <div className="w-5 h-5 rounded-full transition-all flex-shrink-0"
+                  style={{
+                    background: isVisible ? '#c5e500' : 'transparent',
+                    border: isVisible ? '1px solid var(--text-tertiary)' : '1.5px solid var(--text-faint)',
+                    boxShadow: isVisible ? '0 0 10px rgba(197,229,0,0.55)' : 'none',
+                  }} />
+              </button>
               {(() => {
                 const showAdd = isDemo || g.role === 'admin' || g.allow_adhoc;
                 const showInvite = (g.role === 'admin' || g.allow_member_invites) && !!onInviteMember;
@@ -1438,11 +1436,108 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) =>
   );
 };
 
-const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false }) => {
+const DOW_OPTS = [{ i: 0, l: 'Su' }, { i: 1, l: 'Mo' }, { i: 2, l: 'Tu' }, { i: 3, l: 'We' }, { i: 4, l: 'Th' }, { i: 5, l: 'Fr' }, { i: 6, l: 'Sa' }];
+
+const ScheduleEditor = ({ schedule, horizon, onSave, onGenerate }) => {
+  const [days, setDays] = useState([]);
+  const [frequency, setFrequency] = useState('weekly');
+  const [time, setTime] = useState('18:00');
+  const [hasEnd, setHasEnd] = useState(false);
+  const [endsOn, setEndsOn] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    setDays(schedule?.days_of_week || []);
+    setFrequency(schedule?.frequency || 'weekly');
+    setTime(schedule?.start_time ? schedule.start_time.slice(0, 5) : '18:00');
+    setHasEnd(!!schedule?.ends_on);
+    setEndsOn(schedule?.ends_on || '');
+    setMsg('');
+  }, [schedule]);
+  const toggleDay = (i) => setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i].sort((a, b) => a - b)));
+  const canSave = days.length > 0 && !!time;
+  const rule = () => ({ days_of_week: days, frequency, start_time: `${time}:00`, ends_on: hasEnd ? (endsOn || null) : null, location: null });
+  const save = async () => {
+    if (!canSave) return;
+    setBusy(true); setMsg('');
+    try { await onSave(rule()); setMsg('Schedule saved.'); } catch (e) { setMsg(e.message || 'Could not save'); }
+    setBusy(false);
+  };
+  const generate = async () => {
+    if (!canSave) return;
+    setBusy(true); setMsg('');
+    try { const n = await onGenerate(rule()); setMsg(n > 0 ? `Generated ${n} session${n === 1 ? '' : 's'}.` : 'Already up to date — no new sessions.'); }
+    catch (e) { setMsg(e.message || 'Could not generate'); }
+    setBusy(false);
+  };
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <div>
+        <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Days</div>
+        <div className="flex gap-1">
+          {DOW_OPTS.map((d) => (
+            <button key={d.i} onClick={() => toggleDay(d.i)} className="flex-1 py-2 rounded-lg text-[12px] font-bold"
+              style={days.includes(d.i) ? { background: '#c5e500', color: '#1a1f00' } : { background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+              {d.l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Cadence</div>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-strong)' }}>
+            {['weekly', 'biweekly'].map((f) => (
+              <button key={f} onClick={() => setFrequency(f)} className="flex-1 py-2 text-[11px] font-bold"
+                style={frequency === f ? { background: '#c5e500', color: '#1a1f00' } : { background: 'transparent', color: 'var(--text-secondary)' }}>
+                {f === 'biweekly' ? 'Biweekly' : 'Weekly'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Time</div>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+            className="w-full bg-transparent py-1.5 px-2 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="text-[12px]" style={{ color: 'var(--text-primary)' }}>Set an end date</div>
+          <button onClick={() => setHasEnd((v) => !v)} className="w-10 h-6 rounded-full transition-colors flex-shrink-0" style={{ background: hasEnd ? '#c5e500' : 'var(--bg-input-hover)' }}>
+            <div className="w-5 h-5 rounded-full bg-white" style={{ transform: hasEnd ? 'translateX(18px)' : 'translateX(2px)' }} />
+          </button>
+        </div>
+        {hasEnd ? (
+          <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)}
+            className="w-full bg-transparent py-1.5 px-2 rounded-lg text-sm mt-2"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        ) : (
+          <div className="text-[11px] text-zinc-500 mt-1">Runs indefinitely (no end date).</div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={save} disabled={!canSave || busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold disabled:opacity-40" style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>
+          {busy ? '…' : 'Save schedule'}
+        </button>
+        <button onClick={generate} disabled={!canSave || busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>
+          Finalize &amp; generate
+        </button>
+      </div>
+      {msg && <div className="text-[11px] text-center" style={{ color: msg.startsWith('Could not') ? '#fb7185' : '#c5e500' }}>{msg}</div>}
+      <div className="text-[10px] text-zinc-600 text-center leading-snug">
+        &ldquo;Finalize&rdquo; saves the cadence and fills upcoming sessions up to your horizon ({horizon}).
+      </div>
+    </div>
+  );
+};
+
+const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions }) => {
   const g = GROUP_INFO[groupId] || GROUP_INFO.cbt;
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
-  const { name, location, allowAdhoc, isPublic, horizon = 4, schedule = [], allowMemberInvites = false } = s;
+  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false } = s;
   const memberList = members ?? [
     { full_name: 'Nicholas Morgan', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
     { full_name: 'Pastor Mike', role: 'member' }, { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' },
@@ -1468,13 +1563,16 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
         <ToggleRow label="Public group" sub={isPublic ? 'Searchable in Discover Groups' : 'Invite only · share URL or email'} on={isPublic} onChange={(v) => update({ isPublic: v })} />
       </SettingsSection>
       <SettingsSection title="Schedule">
-        <div className="px-4 py-4 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-          Recurring schedule is being redesigned — you&rsquo;ll pick days of the week + a cadence (weekly, biweekly, monthly).
-          For now, create one-off sessions with <span style={{ color: '#c5e500' }}>Add instance</span> from the groups menu.
-        </div>
+        {isDemo ? (
+          <div className="px-4 py-4 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+            Recurring schedule editing is available in the live app.
+          </div>
+        ) : (
+          <ScheduleEditor schedule={schedule} horizon={horizon} onSave={onSaveSchedule} onGenerate={onGenerateSessions} />
+        )}
       </SettingsSection>
       <SettingsSection title="Options">
-        <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={12} unit=" ahead" />
+        <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={10} unit=" ahead" />
         <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
         <ToggleRow label="Members can invite" sub="Let any member share a join link" on={allowMemberInvites} onChange={(v) => update({ allowMemberInvites: v })} />
       </SettingsSection>
@@ -1676,7 +1774,6 @@ export default function App({ account = null }) {
   const [view, setView] = useState('today');
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState(null);
-  const [filterGroupId, setFilterGroupId] = useState(null);
   const [currentIdx, setCurrentIdx] = useState(DEFAULT_IDX);
 
   const initial = MOCK_SESSIONS[DEFAULT_IDX];
@@ -1727,7 +1824,10 @@ export default function App({ account = null }) {
     setGroupSettingsMap(m => ({ ...m, [gid]: { ...(m[gid] || {}), ...patch } }));
   };
 
-  const filtered = filterGroupId ? sessions.filter(s => s.groupId === filterGroupId) : sessions;
+  // The feed shows sessions from groups the user has toggled visible.
+  const allGroupIds = Object.keys(groupInfo);
+  const isFiltered = allGroupIds.length > 0 && allGroupIds.some((id) => !visibleGroups.has(id));
+  const filtered = sessions.filter(s => visibleGroups.has(s.groupId));
   const safeIdx = Math.min(currentIdx, filtered.length - 1);
   const filteredDefaultIdx = filtered.findIndex(s => !s.past);
   const atDefault = safeIdx === filteredDefaultIdx;
@@ -1816,25 +1916,9 @@ export default function App({ account = null }) {
     const idx = filtered.findIndex(s => s.id === id);
     if (idx >= 0) { goTo(idx); setView('today'); }
   };
-  const handleFilter = (gid) => {
-    setFilterGroupId(gid);
-    setGroupsOpen(false);
-    const newFiltered = sessions.filter(s => s.groupId === gid);
-    const newDefaultIdx = newFiltered.findIndex(s => !s.past);
-    const idx = newDefaultIdx >= 0 ? newDefaultIdx : 0;
-    setCurrentIdx(idx);
-    loadSession(newFiltered[idx]);
-    setView('today');
-  };
-  const handleClearFilter = () => {
-    setFilterGroupId(null);
-    const idx = Math.max(0, sessions.findIndex(s => !s.past));
-    setCurrentIdx(idx);
-    loadSession(sessions[idx]);
-  };
+  // "Clear filter" = make every group visible again.
+  const handleClearFilter = () => setVisibleGroups(new Set(allGroupIds));
   const handleManage = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-settings'); };
-
-  const filterGroupName = filterGroupId ? (groupInfo[filterGroupId]?.name ?? null) : null;
 
   // Real groups are visible-by-default in the menu (union in new ones; never wipe user hides).
   useEffect(() => {
@@ -1854,7 +1938,7 @@ export default function App({ account = null }) {
       setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided);
       setMyStatus(s.myStatus); setMyPartySize(s.myPartySize || 1);
     }
-  }, [isDemo, safeIdx, live.sessions, filterGroupId]);
+  }, [isDemo, safeIdx, live.sessions, visibleGroups]);
 
   // Real app: on first load, land on the next upcoming session.
   const didInitIdx = useRef(false);
@@ -1918,7 +2002,7 @@ export default function App({ account = null }) {
           onSettingsClick={() => setView('settings')}
           view={view}
           onViewChange={(v) => { setView(v); }}
-          filterGroupName={filterGroupName}
+          isFiltered={isFiltered}
           onClearFilter={handleClearFilter}
           showBackButton={view === 'today' && !atDefault && filtered.length > 0}
           onBackToDefault={backToDefault}
@@ -1972,7 +2056,7 @@ export default function App({ account = null }) {
           ) : (() => {
             const ag = (live.groups || []).find(g => g.id === activeGroupId);
             if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
-            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 4, schedule: [], allowMemberInvites: ag.allow_member_invites };
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites };
             return (
               <GroupSettingsView
                 groupId={activeGroupId}
@@ -1980,6 +2064,9 @@ export default function App({ account = null }) {
                 settings={realSettings}
                 members={live.membersByGroup?.[activeGroupId] || []}
                 meName={meName}
+                schedule={live.schedulesByGroup?.[activeGroupId] || null}
+                onSaveSchedule={(r) => live.saveSchedule(activeGroupId, r)}
+                onGenerateSessions={async (r) => { const s = await live.saveSchedule(activeGroupId, r); return live.generateSessions(activeGroupId, s, ag.horizon ?? 5); }}
                 update={(patch) => {
                   const db = {};
                   if ('name' in patch) db.name = patch.name;
@@ -1996,7 +2083,7 @@ export default function App({ account = null }) {
         </div>
       </div>
 
-      <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onFilter={handleFilter} onManage={handleManage}
+      <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onManage={handleManage}
         visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
         groups={Object.values(groupInfo)} isDemo={isDemo}
         onCreateGroup={() => { setGroupsOpen(false); setCreateGroupOpen(true); }}
@@ -2008,7 +2095,12 @@ export default function App({ account = null }) {
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
-      <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)} onCreate={live.createGroup} />
+      <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)}
+        onCreate={async (args) => {
+          const g = await live.createGroup(args);
+          if (g?.id) { setActiveGroupId(g.id); setView('group-settings'); }
+          return g;
+        }} />
       <InviteMemberModal open={!!inviteForGroup} onClose={() => setInviteForGroup(null)}
         groupName={inviteForGroup ? groupInfo[inviteForGroup]?.name : ''} groupId={inviteForGroup} real={!isDemo} />
       <EditInstanceModal session={editSession} onClose={() => setEditSession(null)}

@@ -66,6 +66,7 @@ export function useLiveData(enabled) {
   const [groups, setGroups] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [membersByGroup, setMembersByGroup] = useState({});
+  const [schedulesByGroup, setSchedulesByGroup] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -82,6 +83,16 @@ export function useLiveData(enabled) {
       }));
       // member count for the groups list UI
       const grpsWithCounts = grps.map((g) => ({ ...g, members: (membersByGroup[g.id] || []).length }));
+
+      const schedulesByGroupNext = {};
+      if (groupIds.length) {
+        const { data: scheds, error: schErr } = await supabase
+          .from('schedules')
+          .select('*')
+          .in('group_id', groupIds);
+        if (schErr) throw schErr;
+        for (const s of scheds || []) schedulesByGroupNext[s.group_id] = s;
+      }
 
       const sess = await data.listSessions(groupIds);
       const sessionIds = sess.map((s) => s.id);
@@ -106,6 +117,7 @@ export function useLiveData(enabled) {
       setGroups(grpsWithCounts);
       setSessions(adapted);
       setMembersByGroup(membersByGroup);
+      setSchedulesByGroup(schedulesByGroupNext);
       setLoading(false);
     } catch (e) {
       console.error('[liveData] load error:', e);
@@ -157,6 +169,18 @@ export function useLiveData(enabled) {
 
   const createInvite = useCallback((groupId) => data.createInvite(groupId), []);
 
+  const saveSchedule = useCallback(async (gid, rule) => {
+    const s = await data.saveSchedule(gid, rule);
+    await load();
+    return s;
+  }, [load]);
+
+  const generateSessions = useCallback(async (gid, schedule, horizon) => {
+    const n = await data.generateSessions(gid, schedule, horizon);
+    await load();
+    return n;
+  }, [load]);
+
   const saveGroup = useCallback(async (gid, patch) => {
     // Optimistic: reflect the change in the UI immediately (group fields are DB columns).
     setGroups((prev) => prev.map((g) => (g.id === gid ? { ...g, ...patch } : g)));
@@ -168,5 +192,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, saveGroup };
+  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, saveGroup, saveSchedule, generateSessions };
 }

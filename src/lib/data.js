@@ -86,6 +86,80 @@ export function inviteUrl(token) {
   return `${window.location.origin}/join/${token}`;
 }
 
+// ---- Schedules ------------------------------------------------------------
+
+export async function getSchedule(groupId) {
+  const { data, error } = await supabase
+    .from('schedules')
+    .select('*')
+    .eq('group_id', groupId)
+    .maybeSingle();
+  if (error) throw error;
+  return data; // row or null
+}
+
+export async function saveSchedule(groupId, { days_of_week, frequency, start_time, ends_on, location }) {
+  const { data, error } = await supabase
+    .from('schedules')
+    .upsert(
+      { group_id: groupId, days_of_week, frequency, start_time, ends_on: ends_on || null, location: location || null },
+      { onConflict: 'group_id' },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Next `count` session datetimes (local) for a schedule rule, respecting cadence + end date.
+export function computeUpcomingDates(schedule, count, fromDate = new Date()) {
+  const days = new Set((schedule.days_of_week || []).map(Number));
+  if (days.size === 0 || count <= 0) return [];
+  const interval = schedule.frequency === 'biweekly' ? 2 : 1;
+  const startsOn = new Date(`${schedule.starts_on || new Date().toISOString().slice(0, 10)}T00:00:00`);
+  const endsOn = schedule.ends_on ? new Date(`${schedule.ends_on}T23:59:59`) : null;
+  const [hh, mm] = String(schedule.start_time || '00:00').split(':').map(Number);
+  const out = [];
+  const cursor = new Date(fromDate); cursor.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 740 && out.length < count; i++) {
+    if (endsOn && cursor > endsOn) break;
+    if (days.has(cursor.getDay())) {
+      const weeks = Math.floor((cursor - startsOn) / (7 * 24 * 3600 * 1000));
+      if (interval === 1 || (((weeks % 2) + 2) % 2) === 0) {
+        const dt = new Date(cursor); dt.setHours(hh, mm, 0, 0);
+        if (dt >= fromDate) out.push(dt);
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+// Finalize: create upcoming sessions up to `horizon` from the schedule (skips ones that already exist).
+export async function generateSessions(groupId, schedule, horizon) {
+  const { data: existing, error: exErr } = await supabase
+    .from('sessions')
+    .select('starts_at')
+    .eq('group_id', groupId)
+    .gte('starts_at', new Date().toISOString());
+  if (exErr) throw exErr;
+  const existingTimes = new Set((existing || []).map((r) => new Date(r.starts_at).getTime()));
+  const toInsert = computeUpcomingDates(schedule, Math.max(1, horizon))
+    .filter((d) => !existingTimes.has(d.getTime()))
+    .map((d) => ({
+      group_id: groupId,
+      schedule_id: schedule.id,
+      starts_at: d.toISOString(),
+      location: schedule.location || null,
+      court_count: 1,
+      is_adhoc: false,
+    }));
+  if (toInsert.length === 0) return 0;
+  const { error } = await supabase.from('sessions').insert(toInsert);
+  if (error) throw error;
+  return toInsert.length;
+}
+
 // ---- Sessions -------------------------------------------------------------
 
 // Upcoming + recent sessions across the given groups, soonest first.
