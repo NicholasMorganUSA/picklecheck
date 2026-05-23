@@ -1693,7 +1693,8 @@ const InviteMemberModal = ({ open, onClose, groupName, groupId, real = false }) 
   const [link, setLink] = useState('');
   const [genLoading, setGenLoading] = useState(false);
   const [genErr, setGenErr] = useState('');
-  useEffect(() => { if (!open) { setLink(''); setGenErr(''); setEmail(''); } }, [open]);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (!open) { setLink(''); setGenErr(''); setEmail(''); setCopied(false); } }, [open]);
   const generate = async () => {
     setGenLoading(true); setGenErr('');
     try { const inv = await createInvite(groupId); setLink(inviteUrl(inv.token)); }
@@ -1702,6 +1703,9 @@ const InviteMemberModal = ({ open, onClose, groupName, groupId, real = false }) 
   };
   const fakeLink = `https://picklecheck.in/join/${(groupName || '').toLowerCase().replace(/\s+/g, '-')}`;
   const shownLink = real ? link : fakeLink;
+  // Ready-to-paste invite (group name + one-line blurb + link).
+  const message = `Hey! You're invited to join ${groupName || 'our group'} on PickleCheck 🎾 — it shows who's IN for each pickleball session so you know before you go. Join here: ${shownLink}`;
+  const copyMsg = () => { navigator.clipboard?.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   return (
     <ModalSheet open={open} onClose={onClose} title="Invite member">
       <div className="space-y-3 text-sm">
@@ -1714,15 +1718,20 @@ const InviteMemberModal = ({ open, onClose, groupName, groupId, real = false }) 
               {genLoading ? 'Generating…' : 'Generate invite link'}
             </button>
           ) : (
-            <div className="flex gap-2">
-              <input readOnly value={shownLink}
-                className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-xs truncate"
-                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)' }} />
-              <button onClick={() => navigator.clipboard?.writeText(shownLink)} className="px-3 py-2 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>Copy</button>
+            <div className="space-y-2">
+              <textarea readOnly value={message} rows={4}
+                className="w-full bg-transparent py-2 px-2.5 rounded-lg text-xs leading-snug resize-none"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+              <button onClick={copyMsg} className="w-full py-2.5 rounded-lg text-[12px] font-bold transition-colors"
+                style={copied
+                  ? { background: '#c5e500', color: '#1a1f00', border: '1px solid #c5e500' }
+                  : { background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+                {copied ? 'Copied! Paste it in your group chat' : 'Copy invite message'}
+              </button>
             </div>
           )}
           {genErr && <div className="text-[11px] mt-1" style={{ color: '#fb7185' }}>{genErr}</div>}
-          {real && <div className="text-[10px] text-zinc-600 mt-1.5">Anyone with this link can join after signing in with Google.</div>}
+          {real && <div className="text-[10px] text-zinc-600 mt-1.5">Anyone who taps the link can join after signing in.</div>}
         </div>
         {!real && (
           <>
