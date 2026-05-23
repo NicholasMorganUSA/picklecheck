@@ -169,6 +169,11 @@ export function useLiveData(enabled) {
 
   const createInvite = useCallback((groupId) => data.createInvite(groupId), []);
 
+  const joinGroup = useCallback(async (groupId) => {
+    await data.joinPublicGroup(groupId);
+    await load();
+  }, [load]);
+
   const saveSchedule = useCallback(async (gid, rule) => {
     const s = await data.saveSchedule(gid, rule);
     await load();
@@ -192,5 +197,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, saveGroup, saveSchedule, generateSessions };
+  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, saveGroup, saveSchedule, generateSessions };
 }

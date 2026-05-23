@@ -37,6 +37,26 @@ export async function createGroup({ name, location = null, isPublic = false, all
   return data;
 }
 
+// Public groups for the Discover flow (RLS allows anyone to read is_public groups).
+export async function searchPublicGroups(query) {
+  let q = supabase.from('groups').select('id, name, location').eq('is_public', true);
+  if (query && query.trim()) q = q.ilike('name', `%${query.trim()}%`);
+  const { data, error } = await q.order('name').limit(25);
+  if (error) throw error;
+  return data || [];
+}
+
+// Join a public group directly (RLS permits self-insert as member for public groups).
+export async function joinPublicGroup(groupId) {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth?.user?.id;
+  if (!userId) throw new Error('Not signed in');
+  const { error } = await supabase
+    .from('group_members')
+    .insert({ group_id: groupId, user_id: userId, role: 'member' });
+  if (error) throw error;
+}
+
 export async function updateGroup(groupId, patch) {
   const { data, error } = await supabase
     .from('groups')

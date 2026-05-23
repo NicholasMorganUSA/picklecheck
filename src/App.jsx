@@ -1,7 +1,7 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
 import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
-import { inviteUrl, createInvite } from "./lib/data.js";
+import { inviteUrl, createInvite, searchPublicGroups } from "./lib/data.js";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -1299,39 +1299,70 @@ const PartySizeModal = ({ control, onConfirm, onClose }) => {
   );
 };
 
-const DiscoverGroupsModal = ({ open, onClose }) => {
+const DiscoverGroupsModal = ({ open, onClose, onJoin, myGroupIds = [] }) => {
+  const real = !!onJoin;
   const [query, setQuery] = useState('');
-  const fake = [
-    { id: 'cinc-1', name: 'Cincinnati Sunday Open Play', members: 32, location: 'Sawyer Point', public: true },
-    { id: 'cinc-2', name: 'Mason Morning Crew', members: 18, location: 'Life Time Mason', public: true },
-    { id: 'cinc-3', name: 'West Chester Pickleball', members: 47, location: 'Voice of America Park', public: true },
-  ];
-  const results = fake.filter(g => g.name.toLowerCase().includes(query.toLowerCase()));
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [joiningId, setJoiningId] = useState(null);
+  useEffect(() => {
+    if (!open || !real) return;
+    let active = true;
+    setLoading(true); setErr('');
+    const t = setTimeout(() => {
+      searchPublicGroups(query)
+        .then((r) => { if (active) { setResults(r); setLoading(false); } })
+        .catch((e) => { if (active) { setErr(e.message || 'Search failed'); setLoading(false); } });
+    }, 250);
+    return () => { active = false; clearTimeout(t); };
+  }, [query, open, real]);
+  const fakeResults = [
+    { id: 'cinc-1', name: 'Cincinnati Sunday Open Play', location: 'Sawyer Point' },
+    { id: 'cinc-2', name: 'Mason Morning Crew', location: 'Life Time Mason' },
+    { id: 'cinc-3', name: 'West Chester Pickleball', location: 'Voice of America Park' },
+  ].filter((g) => g.name.toLowerCase().includes(query.toLowerCase()));
+  const list = real ? results : fakeResults;
+  const join = async (g) => {
+    if (!real) return;
+    setJoiningId(g.id); setErr('');
+    try { await onJoin(g.id); onClose(); } catch (e) { setErr(e.message || 'Could not join'); setJoiningId(null); }
+  };
   return (
-    <ModalSheet open={open} onClose={onClose} title="Discover groups">
+    <ModalSheet open={open} onClose={onClose} title="Find a group">
       <div className="space-y-3 text-sm">
         <div className="text-[11px] text-zinc-500 leading-snug">
-          Search public groups in your area. Private groups require an invite link or email invitation from an admin.
+          Search public groups by name. Private groups need an invite link from an admin.
         </div>
-        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or city"
+        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name"
           className="w-full bg-transparent py-2.5 px-3 rounded-lg text-sm"
           style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} autoFocus />
         <div className="space-y-2 max-h-80 overflow-y-auto">
-          {results.length === 0 && <div className="text-center text-[11px] text-zinc-500 py-6">No public groups found</div>}
-          {results.map(g => (
-            <div key={g.id} className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}>
-              <div className="min-w-0">
-                <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
-                <div className="text-[11px] text-zinc-500">{g.location} · {g.members} members</div>
+          {real && loading && <div className="text-center text-[11px] text-zinc-500 py-6">Searching…</div>}
+          {!loading && list.length === 0 && <div className="text-center text-[11px] text-zinc-500 py-6">No public groups found.</div>}
+          {!loading && list.map((g) => {
+            const already = myGroupIds.includes(g.id);
+            return (
+              <div key={g.id} className="rounded-xl p-3 flex items-center justify-between gap-2" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
+                  {g.location && <div className="text-[11px] text-zinc-500 truncate">{g.location}</div>}
+                </div>
+                {already ? (
+                  <span className="text-[10px] font-bold tracking-wider px-2.5 py-1.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }}>JOINED</span>
+                ) : (
+                  <button onClick={() => join(g)} disabled={!real || joiningId === g.id}
+                    className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider flex-shrink-0 disabled:opacity-50"
+                    style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+                    {joiningId === g.id ? 'JOINING…' : 'JOIN'}
+                  </button>
+                )}
               </div>
-              <button className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider flex-shrink-0"
-                style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.25)' }}>
-                REQUEST JOIN
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — search results are placeholders.</div>
+        {err && <div className="text-[11px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
+        {!real && <div className="text-[10px] text-zinc-600 text-center pt-1">Demo — sign in to find and join real groups.</div>}
       </div>
     </ModalSheet>
   );
@@ -1710,13 +1741,18 @@ const DemoStepper = ({ label, value, onChange, max, color }) => (
 // ────────────────────────────────────────────────────────────────────
 // EMPTY STATE + CREATE GROUP (real app)
 // ────────────────────────────────────────────────────────────────────
-const EmptyState = ({ title, body, cta, onCta }) => (
+const EmptyState = ({ title, body, cta, onCta, cta2, onCta2 }) => (
   <div className="rounded-3xl px-6 py-12 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)' }}>
     <div className="text-lg font-bold mb-1.5" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: 'var(--text-strong)' }}>{title}</div>
     <div className="text-[13px] mb-5 leading-snug" style={{ color: 'var(--text-muted)' }}>{body}</div>
-    {cta && (
-      <button onClick={onCta} className="px-5 py-2.5 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>{cta}</button>
-    )}
+    <div className="flex flex-col gap-2 items-center">
+      {cta && (
+        <button onClick={onCta} className="w-full max-w-[240px] px-5 py-2.5 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>{cta}</button>
+      )}
+      {cta2 && (
+        <button onClick={onCta2} className="w-full max-w-[240px] px-5 py-2.5 rounded-full text-sm font-bold" style={{ background: 'var(--bg-subtle)', color: 'var(--text-strong)', border: '1px solid var(--border-medium)' }}>{cta2}</button>
+      )}
+    </div>
   </div>
 );
 
@@ -2034,7 +2070,7 @@ export default function App({ account = null }) {
             ) : live.error ? (
               <EmptyState title="Couldn’t load your data" body={live.error} cta="Retry" onCta={live.reload} />
             ) : (live.groups || []).length === 0 ? (
-              <EmptyState title="Create your first group" body="A group is your recurring crew — make one, then invite players with a link." cta="Create a group" onCta={() => setCreateGroupOpen(true)} />
+              <EmptyState title="Get started" body="Create your own recurring crew, or find a public group near you to join." cta="Create a group" onCta={() => setCreateGroupOpen(true)} cta2="Find a group" onCta2={() => setDiscoverOpen(true)} />
             ) : filtered.length === 0 ? (
               <EmptyState title="No sessions yet" body="Open the menu (top-left) and tap “Add instance” on a group to create a session." cta="Open groups" onCta={() => setGroupsOpen(true)} />
             ) : (
@@ -2093,7 +2129,8 @@ export default function App({ account = null }) {
       <AddInstanceModal groupId={addInstanceFor} groupName={addInstanceFor ? groupInfo[addInstanceFor]?.name : null}
         groupLocation={addInstanceFor ? groupInfo[addInstanceFor]?.location : ''}
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
-      <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
+      <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
+        onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)}
         onCreate={async (args) => {

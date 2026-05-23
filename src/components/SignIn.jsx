@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/auth.jsx';
+import EmailAuthForm from './EmailAuthForm.jsx';
 
-// Matches the prototype's dark backdrop: --bg-app + the three orb radial gradients
-// (dark-theme orb values copied literally, since the THEME CSS vars live inside App.jsx).
+// Matches the prototype's dark backdrop: --bg-app + the three orb radial gradients.
 const ORB_BG = `
   radial-gradient(ellipse 80% 50% at 50% -10%, rgba(197, 229, 0, 0.10), transparent 60%),
   radial-gradient(ellipse 60% 40% at 90% 30%, rgba(16, 185, 129, 0.06), transparent 60%),
@@ -12,7 +12,6 @@ const ORB_BG = `
 const DISPLAY = "'Bricolage Grotesque', sans-serif";
 const BODY = "'Plus Jakarta Sans', system-ui, sans-serif";
 
-// Official Google "G" mark.
 function GoogleG() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -29,16 +28,11 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const handleSignIn = async () => {
-    setBusy(true);
-    setErr(null);
+  const handleGoogle = async () => {
+    setBusy(true); setErr(null);
     try {
-      // On success this triggers a full-page redirect to Google, so we leave `busy` on.
       const { error } = await signInWithGoogle();
-      if (error) {
-        setErr(error.message || 'Sign-in failed. Please try again.');
-        setBusy(false);
-      }
+      if (error) { setErr(error.message || 'Sign-in failed. Please try again.'); setBusy(false); }
     } catch (e) {
       setErr(e?.message || 'Sign-in failed. Please try again.');
       setBusy(false);
@@ -52,7 +46,6 @@ export default function SignIn() {
       padding: '24px', fontFamily: BODY,
     }}>
       <div style={{ width: '100%', maxWidth: '360px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        {/* Wordmark — same composition as App.jsx BrandHeader, scaled up */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', letterSpacing: '-0.02em' }}>
           <span style={{ fontFamily: DISPLAY, fontSize: '40px', fontWeight: 800, lineHeight: 1, color: '#c5e500' }}>Pickle</span>
           <span style={{ fontFamily: DISPLAY, fontSize: '40px', fontWeight: 800, lineHeight: 1, color: '#fafafa' }}>Check</span>
@@ -68,27 +61,33 @@ export default function SignIn() {
         </p>
 
         <button
-          onClick={handleSignIn}
+          onClick={handleGoogle}
           disabled={busy}
           style={{
-            marginTop: '32px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+            marginTop: '28px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
             background: '#fff', color: '#1a1a1a', border: 'none', borderRadius: '14px', padding: '14px 18px',
             fontSize: '15px', fontWeight: 700, fontFamily: BODY, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1,
           }}
         >
           <GoogleG />
-          {busy ? 'Redirecting…' : 'Continue with Google'}
+          Continue with Google
         </button>
+        {err && <p style={{ marginTop: '12px', fontSize: '13px', color: '#fb7185', lineHeight: 1.4 }}>{err}</p>}
 
-        {err && (
-          <p style={{ marginTop: '14px', fontSize: '13px', color: '#fb7185', lineHeight: 1.4 }}>{err}</p>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', margin: '18px 0 4px' }}>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>or</span>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+        </div>
 
-        {/* Secondary, low-emphasis: jump straight to the public demo */}
+        <div style={{ marginTop: '8px', width: '100%' }}>
+          <EmailAuthForm />
+        </div>
+
         <a
           href="/demo"
           style={{
-            marginTop: '14px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginTop: '18px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'transparent', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.14)',
             borderRadius: '14px', padding: '12px 18px', fontSize: '14px', fontWeight: 600, fontFamily: BODY,
             textDecoration: 'none',
@@ -96,9 +95,6 @@ export default function SignIn() {
         >
           I just want to see the app &rarr;
         </a>
-        <p style={{ marginTop: '12px', fontSize: '11px', color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
-          The demo is a sandbox with sample data &mdash; nothing you tap there is saved or shared.
-        </p>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
 import { redeemInvite, previewInvite } from '../lib/data.js';
+import EmailAuthForm from './EmailAuthForm.jsx';
 
 const DISPLAY = "'Bricolage Grotesque', sans-serif";
 const BODY = "'Plus Jakarta Sans', system-ui, sans-serif";
@@ -103,6 +104,14 @@ export default function Join() {
           <GoogleG />
           Continue with Google
         </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', margin: '18px 0 4px' }}>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>or</span>
+          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.12)' }} />
+        </div>
+        <div style={{ marginTop: '8px', width: '100%' }}>
+          <EmailAuthForm />
+        </div>
       </Shell>
     );
   }

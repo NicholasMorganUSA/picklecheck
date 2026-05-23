@@ -28,6 +28,12 @@ export function AuthProvider({ children }) {
       provider: 'google',
       options: { redirectTo: redirectTo || (window.location.origin + '/') },
     }),
+    signUpWithEmail: (email, password, fullName) => supabase.auth.signUp({
+      email,
+      password,
+      options: { data: fullName ? { full_name: fullName } : {} },
+    }),
+    signInWithEmail: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signOut: () => supabase.auth.signOut(),
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
