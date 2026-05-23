@@ -1,5 +1,7 @@
-import { useState, useId, useMemo, useEffect } from "react";
+import { useState, useId, useMemo, useEffect, useRef } from "react";
 import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, Shield, ChevronDown, Undo2, Users } from "lucide-react";
+import { useLiveData } from "./hooks/useLiveData.js";
+import { inviteUrl } from "./lib/data.js";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -450,14 +452,16 @@ const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, filterGroupN
 // SESSION CARD
 // (interactive=false for peek cards on either side)
 // ────────────────────────────────────────────────────────────────────
-const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true }) => {
-  const group = GROUP_INFO[session.groupId];
+const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name }) => {
+  // Real sessions carry groupName + roster; the mock prototype falls back to GROUP_INFO/generateRoster.
+  const groupName = session.groupName || GROUP_INFO[session.groupId]?.name || 'Group';
   const overall = getOverallStatus(confirmed);
   const o = COLOR[overall];
   const numCourts = Math.max(1, Math.ceil((confirmed + tentative) / 4));
   const [rosterOpen, setRosterOpen] = useState(false);
-  const roster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
+  const computedRoster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
     [session.id, confirmed, tentative, out, undecided, myStatus, myPartySize]);
+  const roster = session.roster || computedRoster;
   const context = dayContext(session.dateObj);
   const isContextLabel = ['TODAY', 'TOMORROW'].includes(context) || context.startsWith('IN ');
 
@@ -484,7 +488,7 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
 
         {/* Group name + court count — secondary */}
         <div className="mt-1.5 text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-          <span>{group.name}</span>
+          <span>{groupName}</span>
           <span style={{ color: 'var(--text-faint)' }}>·</span>
           <span style={{ color: 'var(--text-tertiary)' }}>{numCourts} CT</span>
         </div>
@@ -566,10 +570,10 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       {/* Roster expanded */}
       {rosterOpen && (
         <div className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-          <RosterSection title="IN"        names={roster.in}        color="#c5e500" lighter />
-          <RosterSection title="MAYBE"     names={roster.maybe}     color="#fcd34d" />
-          <RosterSection title="OUT"       names={roster.out}       color="#a1a1aa" />
-          <RosterSection title="UNDECIDED" names={roster.undecided} color="#71717a" />
+          <RosterSection title="IN"        names={roster.in}        color="#c5e500" lighter meName={meName} />
+          <RosterSection title="MAYBE"     names={roster.maybe}     color="#fcd34d" meName={meName} />
+          <RosterSection title="OUT"       names={roster.out}       color="#a1a1aa" meName={meName} />
+          <RosterSection title="UNDECIDED" names={roster.undecided} color="#71717a" meName={meName} />
         </div>
       )}
     </div>
@@ -584,7 +588,7 @@ const ActionButton = ({ label, active, activeStyle, onClick, disabled }) => (
   </button>
 );
 
-const RosterSection = ({ title, names, color, lighter }) => {
+const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }) => {
   if (!names || names.length === 0) {
     return (
       <div className="px-5 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -605,9 +609,9 @@ const RosterSection = ({ title, names, color, lighter }) => {
       <div className="space-y-1.5 ml-3.5">
         {names.map((name, i) => (
           <div key={i} className="flex items-center gap-2.5">
-            <Avatar name={name} size={24} isYou={name === MOCK_USER.name} />
-            <span className="text-[13px]" style={{ color: name === MOCK_USER.name ? '#c5e500' : 'var(--text-strong)' }}>
-              {name === MOCK_USER.name ? `${name} (you)` : name}
+            <Avatar name={name} size={24} isYou={name === meName} />
+            <span className="text-[13px]" style={{ color: name === meName ? '#c5e500' : 'var(--text-strong)' }}>
+              {name === meName ? `${name} (you)` : name}
             </span>
           </div>
         ))}
@@ -619,7 +623,7 @@ const RosterSection = ({ title, names, color, lighter }) => {
 // ────────────────────────────────────────────────────────────────────
 // SESSION CAROUSEL — peeks prev/next during swipe
 // ────────────────────────────────────────────────────────────────────
-const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext }) => {
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name }) => {
   const prevSession = filteredSessions[currentIdx - 1] || null;
   const currentSession = filteredSessions[currentIdx];
   const nextSession = filteredSessions[currentIdx + 1] || null;
@@ -733,6 +737,7 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
             session={currentSession}
             confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
             myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={onMyStatus} onAdjustParty={onAdjustParty} interactive={true}
+            meName={meName}
           />
         </div>
         {/* Next */}
@@ -816,8 +821,8 @@ const WeekView = ({ sessions, onSelect }) => {
 // ────────────────────────────────────────────────────────────────────
 // GROUPS MENU
 // ────────────────────────────────────────────────────────────────────
-const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover }) => {
-  const allIds = Object.keys(GROUP_INFO);
+const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, isDemo = false }) => {
+  const allIds = groups.map((g) => g.id);
   const allVisible = allIds.every(id => visibleGroups.has(id));
   const noneVisible = visibleGroups.size === 0;
   const toggle = (id) => {
@@ -858,7 +863,7 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
           </button>
         </div>
         <div className="space-y-2.5">
-          {Object.values(GROUP_INFO).map(g => {
+          {groups.map(g => {
             const isVisible = visibleGroups.has(g.id);
             return (
             <div key={g.id} className="rounded-2xl overflow-hidden transition-all"
@@ -879,8 +884,8 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-zinc-500">{g.schedule}</div>
-                  <div className="text-[11px] text-zinc-600 mt-0.5">{g.members} members</div>
+                  <div className="text-[11px] text-zinc-500">{g.schedule || g.location || 'No schedule yet'}</div>
+                  <div className="text-[11px] text-zinc-600 mt-0.5">{g.members ?? 0} members</div>
                 </button>
                 <button onClick={() => toggle(g.id)}
                   className="flex items-center justify-center px-3 transition-all"
@@ -910,7 +915,13 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
             );
           })}
         </div>
-        <button onClick={onDiscover} className="w-full mt-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+        {onCreateGroup && (
+          <button onClick={onCreateGroup} className="w-full mt-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+            style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+            <Plus size={14} />Create group
+          </button>
+        )}
+        <button onClick={onDiscover} className="w-full mt-2 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
           style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px dashed var(--border-strong)' }}>
           <Plus size={14} />Discover groups
         </button>
@@ -972,12 +983,13 @@ const EditableRow = ({ label, value, onSave, type = 'text', placeholder }) => {
       <div className="text-[11px] text-zinc-500 mb-1.5 font-semibold tracking-wider uppercase">{label}</div>
       <div className="flex gap-2">
         <input autoFocus type={type} value={draft} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { setDraft(value); setEditing(false); }}
           className="flex-1 bg-transparent text-sm py-1.5 px-2 rounded-lg"
           style={{ color: 'var(--text-strong)', border: '1px solid rgba(197,229,0,0.4)', outline: 'none' }} />
-        <button onClick={() => { onSave(draft); setEditing(false); }}
+        <button onMouseDown={(e) => e.preventDefault()} onClick={() => { onSave(draft); setEditing(false); }}
           className="px-3 py-1.5 rounded-lg text-[11px] font-bold"
           style={{ background: '#c5e500', color: '#1a1f00' }}>Save</button>
-        <button onClick={() => { setDraft(value); setEditing(false); }}
+        <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setDraft(value); setEditing(false); }}
           className="px-2 py-1.5 rounded-lg text-[11px] font-bold"
           style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Cancel</button>
       </div>
@@ -1186,8 +1198,11 @@ const DiscoverGroupsModal = ({ open, onClose }) => {
     </ModalSheet>
   );
 };
-const SettingsView = ({ onBack, settings, update, theme, setTheme }) => {
+const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) => {
   const { name, email, remind24, remind3, lockIn, summary, outRanges } = settings;
+  // In the real app, profile name/email come from the signed-in account.
+  const displayName = account?.name ?? name;
+  const displayEmail = account?.email ?? email;
   const [adding, setAdding] = useState(false);
   const [newStart, setNewStart] = useState('');
   const [newEnd, setNewEnd] = useState('');
@@ -1213,12 +1228,21 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme }) => {
       </div>
       <SettingsSection title="Profile">
         <div className="flex items-center gap-3 p-4">
-          <Avatar name={name} size={44} isYou />
-          <div className="min-w-0"><div className="text-sm font-bold truncate">{name}</div><div className="text-[12px] text-zinc-500 truncate">{email}</div></div>
+          <Avatar name={displayName} size={44} isYou />
+          <div className="min-w-0"><div className="text-sm font-bold truncate">{displayName}</div><div className="text-[12px] text-zinc-500 truncate">{displayEmail}</div></div>
         </div>
-        <EditableRow label="Name" value={name} onSave={(v) => update({ name: v })} />
-        <EditableRow label="Email" value={email} onSave={(v) => update({ email: v })} type="email" />
-        <EditableRow label="Change password" value="" onSave={() => {}} type="password" placeholder="New password" />
+        <EditableRow label="Name" value={displayName} onSave={(v) => (account ? account.updateName(v) : update({ name: v }))} />
+        {account ? (
+          <>
+            <SettingsRow label="Email" value={displayEmail} />
+            <SettingsRow label="Account" value="Signed in with Google" />
+          </>
+        ) : (
+          <>
+            <EditableRow label="Email" value={email} onSave={(v) => update({ email: v })} type="email" />
+            <EditableRow label="Change password" value="" onSave={() => {}} type="password" placeholder="New password" />
+          </>
+        )}
       </SettingsSection>
       <SettingsSection title="Notifications">
         <ToggleRow label="Night-before reminder" sub="24 hours before session" on={remind24} onChange={(v) => update({ remind24: v })} />
@@ -1268,28 +1292,23 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme }) => {
         <SettingsRow label="About" action />
       </SettingsSection>
       <div className="text-center text-[10px] pt-2 pb-4" style={{ color: 'var(--text-faint)' }}><BrandHeader /><div className="mt-2">v0.1 · prototype</div></div>
-      <button className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Sign out</button>
+      <button onClick={() => account?.signOut?.()} className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Sign out</button>
       <ThemeModal open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} setTheme={setTheme} />
     </div>
   );
 };
 
-const GroupSettingsView = ({ groupId, onBack, settings, update }) => {
+const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false }) => {
   const g = GROUP_INFO[groupId] || GROUP_INFO.cbt;
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
-  const { name, location, allowAdhoc, isPublic, horizon, schedule } = s;
+  // Defaults guard against partial settings objects (prevents schedule.map crashes).
+  const { name, location, allowAdhoc, isPublic, horizon = 4, schedule = [] } = s;
+  const memberList = members ?? [
+    { full_name: 'Nicholas Morgan', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
+    { full_name: 'Pastor Mike', role: 'member' }, { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' },
+  ];
+  const memberCount = members ? members.length : g.members;
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [addingSlot, setAddingSlot] = useState(false);
-  const [slotDay, setSlotDay] = useState('SU');
-  const [slotTime, setSlotTime] = useState('19:00');
-  const dayLabel = (d) => ({ SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday' }[d]);
-  const addSlot = () => {
-    const [h, m] = slotTime.split(':').map(Number);
-    const time = `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-    update({ schedule: [...schedule, { id: Date.now(), label: `${dayLabel(slotDay)} · ${time}` }] });
-    setAddingSlot(false);
-  };
-  const removeSlot = (id) => update({ schedule: schedule.filter(x => x.id !== id) });
   return (
     <div>
       <div className="flex items-center gap-3 pb-4">
@@ -1309,49 +1328,29 @@ const GroupSettingsView = ({ groupId, onBack, settings, update }) => {
         <ToggleRow label="Public group" sub={isPublic ? 'Searchable in Discover Groups' : 'Invite only · share URL or email'} on={isPublic} onChange={(v) => update({ isPublic: v })} />
       </SettingsSection>
       <SettingsSection title="Schedule">
-        {schedule.map(slot => (
-          <div key={slot.id} className="px-4 py-3 flex items-center justify-between gap-2">
-            <div className="text-sm">{slot.label}</div>
-            <button onClick={() => removeSlot(slot.id)} className="text-[11px] text-zinc-500 hover:text-rose-400">Remove</button>
-          </div>
-        ))}
-        {addingSlot ? (
-          <div className="px-4 py-3 space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <select value={slotDay} onChange={(e) => setSlotDay(e.target.value)}
-                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
-                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }}>
-                {['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].map(d => <option key={d} value={d} style={{ background: 'var(--bg-modal)' }}>{dayLabel(d)}</option>)}
-              </select>
-              <input type="time" value={slotTime} onChange={(e) => setSlotTime(e.target.value)}
-                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
-                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
-            </div>
-            <div className="flex gap-2">
-              <button onClick={addSlot} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>Add slot</button>
-              <button onClick={() => setAddingSlot(false)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Cancel</button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setAddingSlot(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
-            <Plus size={13} />Add recurring slot
-          </button>
-        )}
+        <div className="px-4 py-4 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+          Recurring schedule is being redesigned — you&rsquo;ll pick days of the week + a cadence (weekly, biweekly, monthly).
+          For now, create one-off sessions with <span style={{ color: '#c5e500' }}>Add instance</span> from the groups menu.
+        </div>
       </SettingsSection>
       <SettingsSection title="Options">
         <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={12} unit=" ahead" />
         <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
       </SettingsSection>
-      <SettingsSection title={`Members · ${g.members}`}>
-        {['Nicholas Morgan', 'Devin Smith', 'Pastor Mike', 'Aaron Tucker', 'Sara Klein'].map((mname, i) => (
-          <div key={i} className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Avatar name={mname} size={32} isYou={mname === MOCK_USER.name} />
-              <div className="text-sm">{mname === MOCK_USER.name ? `${mname} (you)` : mname}</div>
+      <SettingsSection title={`Members · ${memberCount}`}>
+        {memberList.map((m, i) => {
+          const mname = m.full_name || 'Member';
+          const isYou = mname === meName;
+          return (
+            <div key={m.id ?? i} className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Avatar name={mname} size={32} isYou={isYou} />
+                <div className="text-sm">{isYou ? `${mname} (you)` : mname}</div>
+              </div>
+              <div className="text-[10px] tracking-wider font-bold text-zinc-500">{(m.role || 'member').toUpperCase()}</div>
             </div>
-            <div className="text-[10px] tracking-wider font-bold text-zinc-500">{i === 0 ? 'ADMIN' : 'MEMBER'}</div>
-          </div>
-        ))}
+          );
+        })}
         <button onClick={() => setInviteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
           <Plus size={13} />Invite member
         </button>
@@ -1445,9 +1444,67 @@ const DemoStepper = ({ label, value, onChange, max, color }) => (
 );
 
 // ────────────────────────────────────────────────────────────────────
+// EMPTY STATE + CREATE GROUP (real app)
+// ────────────────────────────────────────────────────────────────────
+const EmptyState = ({ title, body, cta, onCta }) => (
+  <div className="rounded-3xl px-6 py-12 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)' }}>
+    <div className="text-lg font-bold mb-1.5" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: 'var(--text-strong)' }}>{title}</div>
+    <div className="text-[13px] mb-5 leading-snug" style={{ color: 'var(--text-muted)' }}>{body}</div>
+    {cta && (
+      <button onClick={onCta} className="px-5 py-2.5 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>{cta}</button>
+    )}
+  </div>
+);
+
+const CreateGroupModal = ({ open, onClose, onCreate }) => {
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { if (open) { setName(''); setLocation(''); setErr(null); setBusy(false); } }, [open]);
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true); setErr(null);
+    try { await onCreate({ name: name.trim(), location: location.trim() || null }); onClose(); }
+    catch (e) { setErr(e.message || 'Could not create group'); setBusy(false); }
+  };
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Create a group">
+      <div className="space-y-3 text-sm">
+        <div className="text-[11px] text-zinc-500 leading-snug">Your recurring crew. You&rsquo;ll be the admin and can invite players with a link.</div>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Group name</div>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. CBT Sunday" autoFocus
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location (optional)</div>
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        {err && <div className="text-[12px]" style={{ color: '#fb7185' }}>{err}</div>}
+        <button onClick={submit} disabled={!name.trim() || busy}
+          className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Creating…' : 'Create group'}</button>
+      </div>
+    </ModalSheet>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
 // APP
 // ────────────────────────────────────────────────────────────────────
-export default function App() {
+export default function App({ account = null }) {
+  // `account` present = real signed-in app; null = public /demo sandbox.
+  const isDemo = !account;
+  const live = useLiveData(!isDemo);
+  const meName = account?.name || MOCK_USER.name;
+  // Data source: mock in the demo, real Supabase data in the signed-in app.
+  const sessions = isDemo ? MOCK_SESSIONS : live.sessions;
+  const groupInfo = isDemo ? GROUP_INFO : Object.fromEntries((live.groups || []).map((g) => [g.id, g]));
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [view, setView] = useState('today');
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState(null);
@@ -1466,8 +1523,8 @@ export default function App() {
   const [discoverOpen, setDiscoverOpen] = useState(false);
   // User settings — lifted here so they persist across view navigation
   const [userSettings, setUserSettings] = useState({
-    name: MOCK_USER.name,
-    email: MOCK_USER.email,
+    name: account?.name || MOCK_USER.name,
+    email: account?.email || MOCK_USER.email,
     remind24: true,
     remind3: true,
     lockIn: true,
@@ -1502,7 +1559,7 @@ export default function App() {
     setGroupSettingsMap(m => ({ ...m, [gid]: { ...(m[gid] || {}), ...patch } }));
   };
 
-  const filtered = filterGroupId ? MOCK_SESSIONS.filter(s => s.groupId === filterGroupId) : MOCK_SESSIONS;
+  const filtered = filterGroupId ? sessions.filter(s => s.groupId === filterGroupId) : sessions;
   const safeIdx = Math.min(currentIdx, filtered.length - 1);
   const filteredDefaultIdx = filtered.findIndex(s => !s.past);
   const atDefault = safeIdx === filteredDefaultIdx;
@@ -1585,7 +1642,7 @@ export default function App() {
   const handleFilter = (gid) => {
     setFilterGroupId(gid);
     setGroupsOpen(false);
-    const newFiltered = MOCK_SESSIONS.filter(s => s.groupId === gid);
+    const newFiltered = sessions.filter(s => s.groupId === gid);
     const newDefaultIdx = newFiltered.findIndex(s => !s.past);
     const idx = newDefaultIdx >= 0 ? newDefaultIdx : 0;
     setCurrentIdx(idx);
@@ -1594,12 +1651,23 @@ export default function App() {
   };
   const handleClearFilter = () => {
     setFilterGroupId(null);
-    setCurrentIdx(DEFAULT_IDX);
-    loadSession(MOCK_SESSIONS[DEFAULT_IDX]);
+    const idx = Math.max(0, sessions.findIndex(s => !s.past));
+    setCurrentIdx(idx);
+    loadSession(sessions[idx]);
   };
   const handleManage = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-settings'); };
 
-  const filterGroupName = filterGroupId ? GROUP_INFO[filterGroupId].name : null;
+  const filterGroupName = filterGroupId ? (groupInfo[filterGroupId]?.name ?? null) : null;
+
+  // Real groups are visible-by-default in the menu (union in new ones; never wipe user hides).
+  useEffect(() => {
+    if (isDemo) return;
+    setVisibleGroups((prev) => {
+      const next = new Set(prev);
+      (live.groups || []).forEach((g) => next.add(g.id));
+      return next;
+    });
+  }, [isDemo, live.groups]);
 
   return (
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
@@ -1659,36 +1727,85 @@ export default function App() {
         />
 
         <div className="space-y-4 mt-3">
-          {view === 'today' && filtered.length > 0 && (
-            <>
+          {view === 'today' && (isDemo ? (
+            filtered.length > 0 && (
+              <>
+                <SessionCarousel
+                  filteredSessions={filtered}
+                  currentIdx={safeIdx}
+                  confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
+                  myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
+                  onPrev={goPrev} onNext={goNext}
+                  meName={meName}
+                />
+                <DemoControls
+                  confirmed={confirmed} setConfirmed={setConfirmed}
+                  tentative={tentative} setTentative={setTentative}
+                  out={out} setOut={setOut}
+                  undecided={undecided} setUndecided={setUndecided}
+                />
+              </>
+            )
+          ) : (
+            live.loading ? (
+              <div className="rounded-3xl px-6 py-12 text-center text-sm" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)', color: 'var(--text-muted)' }}>Loading your groups…</div>
+            ) : live.error ? (
+              <EmptyState title="Couldn’t load your data" body={live.error} cta="Retry" onCta={live.reload} />
+            ) : (live.groups || []).length === 0 ? (
+              <EmptyState title="Create your first group" body="A group is your recurring crew — make one, then invite players with a link." cta="Create a group" onCta={() => setCreateGroupOpen(true)} />
+            ) : filtered.length === 0 ? (
+              <EmptyState title="No sessions yet" body="Open the menu (top-left) and tap “Add instance” on a group to create a session." cta="Open groups" onCta={() => setGroupsOpen(true)} />
+            ) : (
               <SessionCarousel
                 filteredSessions={filtered}
                 currentIdx={safeIdx}
                 confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
                 myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
                 onPrev={goPrev} onNext={goNext}
+                meName={meName}
               />
-              <DemoControls
-                confirmed={confirmed} setConfirmed={setConfirmed}
-                tentative={tentative} setTentative={setTentative}
-                out={out} setOut={setOut}
-                undecided={undecided} setUndecided={setUndecided}
-              />
-            </>
-          )}
+            )
+          ))}
           {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
-          {view === 'settings' && <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} />}
-          {view === 'group-settings' && <GroupSettingsView groupId={activeGroupId} onBack={() => setView('today')} settings={groupSettingsMap[activeGroupId]} update={(patch) => updateGroupSettings(activeGroupId, patch)} />}
+          {view === 'settings' && <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} />}
+          {view === 'group-settings' && (isDemo ? (
+            <GroupSettingsView groupId={activeGroupId} onBack={() => setView('today')} settings={groupSettingsMap[activeGroupId]} update={(patch) => updateGroupSettings(activeGroupId, patch)} isDemo />
+          ) : (() => {
+            const ag = (live.groups || []).find(g => g.id === activeGroupId);
+            if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 4, schedule: [] };
+            return (
+              <GroupSettingsView
+                groupId={activeGroupId}
+                onBack={() => setView('today')}
+                settings={realSettings}
+                members={live.membersByGroup?.[activeGroupId] || []}
+                meName={meName}
+                update={(patch) => {
+                  const db = {};
+                  if ('name' in patch) db.name = patch.name;
+                  if ('location' in patch) db.location = patch.location;
+                  if ('isPublic' in patch) db.is_public = patch.isPublic;
+                  if ('allowAdhoc' in patch) db.allow_adhoc = patch.allowAdhoc;
+                  if ('horizon' in patch) db.horizon = patch.horizon;
+                  if (Object.keys(db).length) live.saveGroup(activeGroupId, db);
+                }}
+              />
+            );
+          })())}
         </div>
       </div>
 
       <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onFilter={handleFilter} onManage={handleManage}
         visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
+        groups={Object.values(groupInfo)} isDemo={isDemo}
+        onCreateGroup={() => { setGroupsOpen(false); setCreateGroupOpen(true); }}
         onAddInstance={(gid) => { setAddInstanceFor(gid); setGroupsOpen(false); }}
         onDiscover={() => { setDiscoverOpen(true); setGroupsOpen(false); }} />
       <AddInstanceModal groupId={addInstanceFor} onClose={() => setAddInstanceFor(null)} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
+      <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)} onCreate={live.createGroup} />
     </div>
   );
 }
