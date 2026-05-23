@@ -505,8 +505,8 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)',
         boxShadow: '0 24px 64px -16px rgba(0,0,0,0.45), 0 1px 0 var(--border-medium) inset',
         opacity: session.cancelled ? 0.72 : 1 }}>
-      {interactive && canEdit && (
-        <button onClick={onEdit} aria-label="Edit session"
+      {canEdit && (
+        <button onClick={() => interactive && onEdit?.()} aria-label="Edit session"
           className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full"
           style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}>
           <Pencil size={14} />
@@ -523,13 +523,10 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       <div className="px-5 pt-4 pb-3 text-center">
         <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{groupName}</div>
         <div className="flex items-center justify-between gap-1">
-          {interactive
-            ? (
-              <button onClick={onPrev} disabled={!canPrev} aria-label="Previous session"
-                className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
-                <ChevronLeft size={22} />
-              </button>
-            ) : <span className="w-7 flex-shrink-0" />}
+          <button onClick={() => interactive && onPrev?.()} disabled={!canPrev} aria-label="Previous session"
+            className="p-1 flex-shrink-0 disabled:opacity-20" style={{ color: 'var(--text-tertiary)' }}>
+            <ChevronLeft size={22} />
+          </button>
           <div className="flex-1 text-center" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95", textShadow: session.timeDiffers ? '0 0 12px rgba(197,229,0,0.55)' : 'none' }}>
             {(context === 'TODAY' || context === 'TOMORROW') ? (
               <>
@@ -542,13 +539,10 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
               </span>
             )}
           </div>
-          {interactive
-            ? (
-              <button onClick={onNext} disabled={!canNext} aria-label="Next session"
-                className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
-                <ChevR size={22} />
-              </button>
-            ) : <span className="w-7 flex-shrink-0" />}
+          <button onClick={() => interactive && onNext?.()} disabled={!canNext} aria-label="Next session"
+            className="p-1 flex-shrink-0 disabled:opacity-20" style={{ color: 'var(--text-tertiary)' }}>
+            <ChevR size={22} />
+          </button>
         </div>
         {location && (
           <div className="text-[12px] mt-1 flex items-center justify-center gap-1"
@@ -580,21 +574,19 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       </div>
 
       {/* Party size chip (persistent, lets user set guests before or after opting in) */}
-      {interactive && (
-        <div className="px-5 pb-3">
-          <button onClick={onAdjustParty}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-full text-[12px] font-semibold transition-all"
-            style={displayPartySize > 1
-              ? { background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.35)' }
-              : { background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-medium)' }
-            }>
-            <Users size={13} />
-            {displayPartySize === 1
-              ? 'Just you · tap to bring guests'
-              : `Going as ${displayPartySize} (you + ${displayPartySize - 1}) · tap to adjust`}
-          </button>
-        </div>
-      )}
+      <div className="px-5 pb-3">
+        <button onClick={() => interactive && onAdjustParty?.()}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-full text-[12px] font-semibold transition-all"
+          style={displayPartySize > 1
+            ? { background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.35)' }
+            : { background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-medium)' }
+          }>
+          <Users size={13} />
+          {displayPartySize === 1
+            ? 'Just you · tap to bring guests'
+            : `Going as ${displayPartySize} (you + ${displayPartySize - 1}) · tap to adjust`}
+        </button>
+      </div>
 
       {/* Status buttons */}
       <div className="grid grid-cols-3 gap-2 px-5 pb-4">
@@ -690,7 +682,7 @@ const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }
 // ────────────────────────────────────────────────────────────────────
 // SESSION CAROUSEL — peeks prev/next during swipe
 // ────────────────────────────────────────────────────────────────────
-const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit }) => {
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit, canEditOf = () => false }) => {
   const prevSession = filteredSessions[currentIdx - 1] || null;
   const currentSession = filteredSessions[currentIdx];
   const nextSession = filteredSessions[currentIdx + 1] || null;
@@ -794,7 +786,9 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
             <SessionCard
               session={prevSession}
               confirmed={prevSession.in} tentative={prevSession.maybe} out={prevSession.out} undecided={prevSession.undecided}
-              myStatus={prevSession.myStatus} onMyStatus={() => {}} interactive={false}
+              myStatus={prevSession.myStatus} myPartySize={prevSession.myPartySize || 1} displayPartySize={prevSession.myPartySize || 1}
+              onMyStatus={() => {}} interactive={false} meName={meName}
+              canPrev={currentIdx - 1 > 0} canNext canEdit={canEditOf(prevSession)}
             />
           ) : <PeekPlaceholder label="No earlier sessions" />}
         </div>
@@ -815,7 +809,9 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
             <SessionCard
               session={nextSession}
               confirmed={nextSession.in} tentative={nextSession.maybe} out={nextSession.out} undecided={nextSession.undecided}
-              myStatus={nextSession.myStatus} onMyStatus={() => {}} interactive={false}
+              myStatus={nextSession.myStatus} myPartySize={nextSession.myPartySize || 1} displayPartySize={nextSession.myPartySize || 1}
+              onMyStatus={() => {}} interactive={false} meName={meName}
+              canPrev canNext={!!filteredSessions[currentIdx + 2]} canEdit={canEditOf(nextSession)}
             />
           ) : <PeekPlaceholder label="No upcoming sessions" />}
         </div>
@@ -1931,8 +1927,9 @@ export default function App({ account = null }) {
   const atDefault = safeIdx === filteredDefaultIdx;
   const currentSession = filtered[safeIdx];
   // Admins of the group OR the session's creator can edit/cancel/delete it.
-  const canEditCurrent = !isDemo && !!currentSession && !!account?.user &&
-    (groupInfo[currentSession.groupId]?.role === 'admin' || currentSession.createdBy === account.user.id);
+  const canEditOf = (s) => !isDemo && !!s && !!account?.user &&
+    (groupInfo[s.groupId]?.role === 'admin' || s.createdBy === account.user.id);
+  const canEditCurrent = canEditOf(currentSession);
 
   const loadSession = (s) => {
     if (!s) return;
@@ -2144,6 +2141,7 @@ export default function App({ account = null }) {
                 onPrev={goPrev} onNext={goNext}
                 meName={meName}
                 canEdit={canEditCurrent} onEdit={() => setEditSession(currentSession)}
+                canEditOf={canEditOf}
               />
             )
           ))}
