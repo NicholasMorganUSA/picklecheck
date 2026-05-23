@@ -1625,8 +1625,8 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
   const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false } = s;
   const memberList = members ?? [
-    { full_name: 'Nicholas Morgan', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
-    { full_name: 'Pastor Mike', role: 'member' }, { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' },
+    { full_name: 'Pickleballer', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
+    { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' }, { full_name: 'Jay Pickett', role: 'member' },
   ];
   const memberCount = members ? members.length : g.members;
   const [inviteOpen, setInviteOpen] = useState(false);
