@@ -1,0 +1,1694 @@
+import { useState, useId, useMemo, useEffect } from "react";
+import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, Shield, ChevronDown, Undo2, Users } from "lucide-react";
+
+// ────────────────────────────────────────────────────────────────────
+// PALETTE
+// ────────────────────────────────────────────────────────────────────
+const COLOR = {
+  red:    { from: '#fb7185', mid: '#bd4751', to: '#7f1d1d', label: 'NOT ENOUGH', sub: 'Need 4+ to play',     text: 'text-rose-200',   dot: '#f43f5e', glow: 'rgba(244, 63, 94, 0.45)' },
+  orange: { from: '#fb923c', mid: '#bc6027', to: '#7c2d12', label: 'TIGHT ROTATION', sub: '7 = awkward bench', text: 'text-orange-200', dot: '#f97316', glow: 'rgba(249, 115, 22, 0.45)' },
+  yellow: { from: '#fde047', mid: '#b7902d', to: '#713f12', label: 'ROOM FOR BENCH', sub: 'Manageable rotation', text: 'text-amber-100',  dot: '#eab308', glow: 'rgba(234, 179, 8, 0.40)' },
+  green:  { from: '#86efac', mid: '#4da16d', to: '#14532d', label: 'READY TO PLAY', sub: 'Full courts locked',   text: 'text-emerald-200', dot: '#10b981', glow: 'rgba(16, 185, 129, 0.50)' },
+  gray:   { from: '#a1a1aa', mid: '#64646a', to: '#27272a', label: 'AWAITING', sub: '', text: 'text-zinc-400', dot: '#52525b', glow: 'rgba(82, 82, 91, 0.25)' },
+};
+
+// Theme tokens — set on the App root via inline `style` as CSS custom properties,
+// then referenced throughout via `var(--token-name)`. Switching theme just swaps
+// the values; no per-component logic needed.
+const THEME = {
+  dark: {
+    '--bg-app':           '#08080c',
+    '--bg-card':          'rgba(20, 20, 28, 0.55)',
+    '--bg-card-solid':    '#0c0c12',
+    '--bg-surface':       'rgba(20, 20, 28, 0.55)',
+    '--bg-subtle':        'rgba(255, 255, 255, 0.03)',
+    '--bg-faint':         'rgba(255, 255, 255, 0.025)',
+    '--bg-glass':         'rgba(255, 255, 255, 0.05)',
+    '--bg-input':         'rgba(255, 255, 255, 0.06)',
+    '--bg-input-hover':   'rgba(255, 255, 255, 0.08)',
+    '--bg-overlay':       'rgba(0, 0, 0, 0.6)',
+    '--bg-modal':         '#0f0f17',
+    '--bg-select-option': '#0f0f17',
+    '--text-strong':      '#fafafa',
+    '--text-primary':     'rgba(255, 255, 255, 0.9)',
+    '--text-secondary':   'rgba(255, 255, 255, 0.7)',
+    '--text-muted':       'rgba(255, 255, 255, 0.55)',
+    '--text-tertiary':    'rgba(255, 255, 255, 0.4)',
+    '--text-faint':       'rgba(255, 255, 255, 0.25)',
+    '--text-disabled':    'rgba(255, 255, 255, 0.15)',
+    '--border-subtle':    'rgba(255, 255, 255, 0.05)',
+    '--border-medium':    'rgba(255, 255, 255, 0.08)',
+    '--border-strong':    'rgba(255, 255, 255, 0.1)',
+    '--orb-green':        'rgba(197, 229, 0, 0.10)',
+    '--orb-emerald':      'rgba(16, 185, 129, 0.06)',
+    '--orb-rose':         'rgba(244, 63, 94, 0.05)',
+  },
+  light: {
+    '--bg-app':           '#f4f4f5',
+    '--bg-card':          'rgba(255, 255, 255, 0.92)',
+    '--bg-card-solid':    '#ffffff',
+    '--bg-surface':       'rgba(255, 255, 255, 0.85)',
+    '--bg-subtle':        'rgba(0, 0, 0, 0.025)',
+    '--bg-faint':         'rgba(0, 0, 0, 0.02)',
+    '--bg-glass':         'rgba(0, 0, 0, 0.04)',
+    '--bg-input':         'rgba(0, 0, 0, 0.05)',
+    '--bg-input-hover':   'rgba(0, 0, 0, 0.08)',
+    '--bg-overlay':       'rgba(0, 0, 0, 0.35)',
+    '--bg-modal':         '#ffffff',
+    '--bg-select-option': '#ffffff',
+    '--text-strong':      '#09090b',
+    '--text-primary':     'rgba(0, 0, 0, 0.88)',
+    '--text-secondary':   'rgba(0, 0, 0, 0.68)',
+    '--text-muted':       'rgba(0, 0, 0, 0.55)',
+    '--text-tertiary':    'rgba(0, 0, 0, 0.45)',
+    '--text-faint':       'rgba(0, 0, 0, 0.3)',
+    '--text-disabled':    'rgba(0, 0, 0, 0.2)',
+    '--border-subtle':    'rgba(0, 0, 0, 0.07)',
+    '--border-medium':    'rgba(0, 0, 0, 0.1)',
+    '--border-strong':    'rgba(0, 0, 0, 0.15)',
+    '--orb-green':        'rgba(197, 229, 0, 0.22)',
+    '--orb-emerald':      'rgba(16, 185, 129, 0.12)',
+    '--orb-rose':         'rgba(244, 63, 94, 0.10)',
+  },
+};
+
+const STATUS_PILL = {
+  in:        { label: 'IN',    color: '#c5e500',                       text: '#1a1f00' },
+  maybe:     { label: 'MAYBE', color: '#fcd34d',                       text: '#1a1500' },
+  out:       { label: 'OUT',   color: '#52525b',                       text: '#fafafa' },
+  undecided: { label: '?',     color: 'var(--bg-input-hover)',        text: 'var(--text-muted)' },
+};
+
+// ────────────────────────────────────────────────────────────────────
+// MOCK DATA
+// ────────────────────────────────────────────────────────────────────
+const GROUP_INFO = {
+  lt:  { id: 'lt',  name: 'LT Breakfast Club', location: 'Life Time, Mason',    role: 'member', schedule: 'Mon–Fri · 6:00 AM',  members: 14 },
+  ees: { id: 'ees', name: 'EES Thursdays',     location: 'EES Indoor Courts',   role: 'member', schedule: 'Thu · 5:00 PM',      members: 9 },
+  cbt: { id: 'cbt', name: 'CBT Sunday',        location: 'CBT Church Gym',      role: 'admin',  schedule: 'Sun · 7:00 PM',      members: 11 },
+};
+
+const MOCK_NOW = new Date('2026-05-22T14:00:00');
+const MOCK_USER = { name: 'Nicholas Morgan', email: 'nick@example.com', initials: 'NM' };
+
+const NAMES = [
+  'Nicholas Morgan', 'Devin Smith', 'Aaron Tucker', 'Sara Klein', 'Jay Pickett',
+  'Marcus Lee', 'Brad Tower', 'Mike Reed', 'Tom Brennan', 'Lisa Park',
+  'Chris Day', 'Dan Hill', 'Pat Cole', 'Bren Adams', 'Megan Ross',
+  'Will Foster', 'Jen Kim', 'Ben Walsh', 'Kyle James', 'Pastor Mike',
+];
+
+const MOCK_SESSIONS = [
+  { id: 's0', groupId: 'lt',  dateObj: new Date('2026-05-22T06:00'), in: 7, maybe: 0, out: 4, undecided: 3, myStatus: 'in',        past: true },
+  { id: 's1', groupId: 'ees', dateObj: new Date('2026-05-22T17:00'), in: 3, maybe: 2, out: 1, undecided: 3, myStatus: 'undecided', past: false },
+  { id: 's2', groupId: 'lt',  dateObj: new Date('2026-05-23T06:00'), in: 6, maybe: 1, out: 2, undecided: 5, myStatus: 'undecided', past: false },
+  { id: 's3', groupId: 'cbt', dateObj: new Date('2026-05-25T19:00'), in: 5, maybe: 1, out: 1, undecided: 4, myStatus: 'undecided', past: false },
+  { id: 's4', groupId: 'lt',  dateObj: new Date('2026-05-26T06:00'), in: 8, maybe: 0, out: 1, undecided: 5, myStatus: 'in',        past: false },
+  { id: 's5', groupId: 'lt',  dateObj: new Date('2026-05-27T06:00'), in: 4, maybe: 2, out: 4, undecided: 4, myStatus: 'maybe',     past: false },
+  { id: 's6', groupId: 'lt',  dateObj: new Date('2026-05-28T06:00'), in: 7, maybe: 0, out: 1, undecided: 6, myStatus: 'undecided', past: false },
+  { id: 's7', groupId: 'lt',  dateObj: new Date('2026-05-29T06:00'), in: 4, maybe: 1, out: 1, undecided: 8, myStatus: 'undecided', past: false },
+  { id: 's8', groupId: 'ees', dateObj: new Date('2026-05-29T17:00'), in: 2, maybe: 3, out: 0, undecided: 4, myStatus: 'undecided', past: false },
+  { id: 's9', groupId: 'lt',  dateObj: new Date('2026-05-30T06:00'), in: 12, maybe: 0, out: 1, undecided: 1, myStatus: 'in',       past: false },
+];
+
+const DEFAULT_IDX = MOCK_SESSIONS.findIndex(s => !s.past);
+
+// Deterministic roster by session
+function generateRoster(session) {
+  const seed = parseInt(session.id.replace('s', '')) || 0;
+  // Always include "you" in IN, MAYBE, OUT, or UNDECIDED based on myStatus
+  const others = NAMES.slice(1); // exclude Nicholas Morgan from the pool
+  const shuffled = [...others].sort((a, b) => {
+    const ha = (a.charCodeAt(0) * 7 + a.charCodeAt(1) * 3 + seed * 13) % 1000;
+    const hb = (b.charCodeAt(0) * 7 + b.charCodeAt(1) * 3 + seed * 13) % 1000;
+    return ha - hb;
+  });
+
+  const lists = { in: [], maybe: [], out: [], undecided: [] };
+  let idx = 0;
+  const fill = (key, count) => {
+    for (let i = 0; i < count; i++) {
+      if (idx < shuffled.length) lists[key].push(shuffled[idx++]);
+    }
+  };
+  // Put "you" in the right bucket first; reduce that bucket count by the user's
+  // party size (only counts > 1 for IN/MAYBE — see handleMyStatus).
+  const counts = { in: session.in, maybe: session.maybe, out: session.out, undecided: session.undecided };
+  const myCount = (session.myStatus === 'in' || session.myStatus === 'maybe') ? (session.myPartySize || 1) : 1;
+  if (counts[session.myStatus] > 0) {
+    const youLabel = myCount > 1 ? `Nicholas Morgan +${myCount - 1}` : 'Nicholas Morgan';
+    lists[session.myStatus].push(youLabel);
+    counts[session.myStatus] = Math.max(0, counts[session.myStatus] - myCount);
+  }
+  fill('in', counts.in);
+  fill('maybe', counts.maybe);
+  fill('out', counts.out);
+  fill('undecided', counts.undecided);
+  return lists;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// LOGIC
+// ────────────────────────────────────────────────────────────────────
+// Per-court color WITHOUT the global "totalConfirmed < 4 = red" rule.
+// Reflects the court's true state based on its own fill.
+function perCourtColor(confirmedHere, tentativeHere, totalConfirmed, totalCourts) {
+  if (confirmedHere === 4) return 'green';
+  if (confirmedHere === 3) {
+    if (totalConfirmed === 7 && totalCourts === 2) return 'orange';
+    return 'yellow';
+  }
+  if (confirmedHere >= 1) return 'yellow';
+  if (tentativeHere >= 1) return 'yellow';
+  return 'gray';
+}
+// Applies the global "no court can be playable if totalConfirmed < 4" rule
+// on top of the per-court color.
+function getCourtColor(confirmedHere, tentativeHere, totalConfirmed, totalCourts) {
+  if (totalConfirmed < 4) return 'red';
+  return perCourtColor(confirmedHere, tentativeHere, totalConfirmed, totalCourts);
+}
+function getOverallStatus(confirmed) {
+  if (confirmed < 4) return 'red';
+  if (confirmed % 4 === 0) return 'green';
+  if (confirmed === 7) return 'orange';
+  return 'yellow';
+}
+// Returns [currentColor, potentialColor] for one court. Gradient renders when
+// this court's tentatives, if confirmed, would shift its color. Exception: when
+// the court is currently red ONLY because totalConfirmed < 4 and the potential
+// isn't green, we skip the misleading "red→yellow" transition and paint solid
+// at the per-court potential. e.g. court with 0 IN + 2 MAYBE in a 3+3 session
+// settles to solid yellow — confirming the maybes doesn't unlock playability,
+// it just reveals what was always a yellow-class court.
+function getCourtGradient(confirmedHere, tentativeHere, totalConfirmed, totalCourts) {
+  const currentActual = getCourtColor(confirmedHere, tentativeHere, totalConfirmed, totalCourts);
+  if (tentativeHere === 0) return [currentActual, currentActual];
+  const newTotal = totalConfirmed + tentativeHere;
+  const potentialActual = newTotal < 4
+    ? 'red'
+    : perCourtColor(confirmedHere + tentativeHere, 0, newTotal, totalCourts);
+  if (currentActual === potentialActual) return [currentActual, currentActual];
+  // Special: red→non-green means red was a global artifact. Show solid potential.
+  if (currentActual === 'red' && potentialActual !== 'green') {
+    return [potentialActual, potentialActual];
+  }
+  return [currentActual, potentialActual];
+}
+function distribute(confirmed, tentative) {
+  const total = confirmed + tentative;
+  const numCourts = Math.max(1, Math.ceil(total / 4));
+  const courts = [];
+  let cRem = confirmed, tRem = tentative;
+  for (let i = 0; i < numCourts; i++) {
+    const cHere = Math.min(4, cRem);
+    const tHere = Math.min(4 - cHere, tRem);
+    courts.push({ confirmed: cHere, tentative: tHere });
+    cRem -= cHere; tRem -= tHere;
+  }
+  return courts;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// HELPERS
+// ────────────────────────────────────────────────────────────────────
+const DAYS_LONG  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function fmtTime(d) {
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
+}
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function dayDiff(a, b) {
+  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((da - db) / 86400000);
+}
+function dayContext(date) {
+  const diff = dayDiff(date, MOCK_NOW);
+  if (diff === 0) return 'TODAY';
+  if (diff === 1) return 'TOMORROW';
+  if (diff > 1 && diff < 7) return `IN ${diff} DAYS`;
+  if (diff < 0) return `${Math.abs(diff)} ${Math.abs(diff) === 1 ? 'DAY' : 'DAYS'} AGO`;
+  return DAYS_SHORT[date.getDay()].toUpperCase();
+}
+function initials(name) {
+  return name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SVG: Ball, Court, MiniCourt
+// ────────────────────────────────────────────────────────────────────
+const Ball = ({ cx, cy, state }) => {
+  if (state === 'confirmed') {
+    return (
+      <g style={{ filter: 'drop-shadow(0 0 3.5px rgba(197, 229, 0, 0.85))' }}>
+        <circle cx={cx} cy={cy} r="10" fill="#c5e500" />
+        <ellipse cx={cx - 2.5} cy={cy - 3} rx="3.2" ry="1.9" fill="#f7ffb8" opacity="0.55" />
+        <circle cx={cx - 3.5} cy={cy + 1} r="0.9" fill="rgba(30,40,0,0.5)" />
+        <circle cx={cx + 3} cy={cy - 1} r="0.9" fill="rgba(30,40,0,0.5)" />
+        <circle cx={cx + 2} cy={cy + 4} r="0.9" fill="rgba(30,40,0,0.5)" />
+        <circle cx={cx - 4} cy={cy + 4} r="0.9" fill="rgba(30,40,0,0.5)" />
+      </g>
+    );
+  }
+  if (state === 'tentative') {
+    return <circle cx={cx} cy={cy} r="10" fill="rgba(197,229,0,0.14)" stroke="#c5e500" strokeWidth="1.2" strokeDasharray="2,1.5" />;
+  }
+  return <circle cx={cx} cy={cy} r="10" fill="rgba(0,0,0,0.18)" stroke="rgba(255,255,255,0.28)" strokeWidth="0.8" />;
+};
+
+const Court = ({ confirmed, tentative, colors, number }) => {
+  const [currentColorName, potentialColorName] = colors;
+  const cur = COLOR[currentColorName];
+  const pot = COLOR[potentialColorName];
+  const isUpgrade = currentColorName !== potentialColorName;
+  const id = useId().replace(/:/g, '_');
+  const ballStates = [];
+  for (let i = 0; i < 4; i++) {
+    if (i < confirmed) ballStates.push('confirmed');
+    else if (i < confirmed + tentative) ballStates.push('tentative');
+    else ballStates.push('empty');
+  }
+  const positions = [
+    { x: 25, y: 37 }, { x: 25, y: 183 },
+    { x: 75, y: 37 }, { x: 75, y: 183 },
+  ];
+  return (
+    <svg viewBox="0 0 100 220" className="w-full h-auto block" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id={`g-${id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          {isUpgrade ? (
+            <>
+              <stop offset="0%" stopColor={cur.mid} />
+              <stop offset="45%" stopColor={cur.mid} />
+              <stop offset="100%" stopColor={pot.mid} />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor={cur.from} />
+              <stop offset="100%" stopColor={cur.to} />
+            </>
+          )}
+        </linearGradient>
+      </defs>
+      <rect x="3" y="3" width="94" height="214" fill={`url(#g-${id})`} stroke="rgba(255,255,255,0.7)" strokeWidth="1.1" rx="6" style={{ transition: 'all 400ms ease' }} />
+      <line x1="3" y1="75"  x2="97" y2="75"  stroke="rgba(255,255,255,0.75)" strokeWidth="0.7" />
+      <line x1="3" y1="145" x2="97" y2="145" stroke="rgba(255,255,255,0.75)" strokeWidth="0.7" />
+      <line x1="50" y1="3"   x2="50" y2="75"  stroke="rgba(255,255,255,0.75)" strokeWidth="0.7" />
+      <line x1="50" y1="145" x2="50" y2="217" stroke="rgba(255,255,255,0.75)" strokeWidth="0.7" />
+      <rect x="3" y="108" width="94" height="4" fill="rgba(0,0,0,0.45)" rx="0.5" />
+      <line x1="3" y1="110" x2="97" y2="110" stroke="rgba(255,255,255,0.9)" strokeWidth="0.5" strokeDasharray="2,1.5" />
+      <text x="50" y="110" fontSize="44" fill="white" fontFamily="'Bricolage Grotesque', sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{number}</text>
+      {positions.map((p, i) => <Ball key={i} cx={p.x} cy={p.y} state={ballStates[i]} />)}
+    </svg>
+  );
+};
+
+const MiniCourt = ({ color, number }) => {
+  const c = COLOR[color];
+  const id = useId().replace(/:/g, '_');
+  return (
+    <svg viewBox="0 0 100 220" className="block" style={{ width: '34px', height: 'auto', transition: 'all 400ms ease' }} preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id={`mg-${id}`} x1="0%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stopColor={c.from} />
+          <stop offset="100%" stopColor={c.to} />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="3" width="94" height="214" fill={`url(#mg-${id})`} stroke="rgba(255,255,255,0.75)" strokeWidth="2.2" rx="10" />
+      <line x1="3" y1="75"  x2="97" y2="75"  stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+      <line x1="3" y1="145" x2="97" y2="145" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" />
+      <rect x="3" y="108" width="94" height="4" fill="rgba(0,0,0,0.55)" />
+      <text x="50" y="110" fontSize="68" fill="white" fontFamily="'Bricolage Grotesque', sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{number}</text>
+    </svg>
+  );
+};
+
+const CourtGrid = ({ confirmed, tentative }) => {
+  const courts = distribute(confirmed, tentative);
+  const n = courts.length;
+  const gradientOf = (c) => getCourtGradient(c.confirmed, c.tentative, confirmed, n);
+  if (n <= 4) {
+    const cols = n === 1 ? 'grid-cols-1' : n === 2 ? 'grid-cols-2' : n === 3 ? 'grid-cols-3' : 'grid-cols-4';
+    const maxWidth = n === 1 ? '95px' : n === 2 ? '220px' : n === 3 ? '270px' : undefined;
+    return (
+      <div className={`grid ${cols} gap-3 mx-auto`} style={{ maxWidth }}>
+        {courts.map((c, i) => <Court key={i} confirmed={c.confirmed} tentative={c.tentative} colors={gradientOf(c)} number={i + 1} />)}
+      </div>
+    );
+  }
+  const bigCount = Math.min(3, n - 3);
+  const miniCount = n - bigCount;
+  const minis = courts.slice(0, miniCount);
+  const bigs  = courts.slice(miniCount);
+  const bigsCols = bigCount === 2 ? 'grid-cols-2' : 'grid-cols-3';
+  const bigsMaxWidth = bigCount === 2 ? '240px' : undefined;
+  return (
+    <div className="space-y-3.5">
+      <div className="flex flex-wrap gap-1.5 justify-center items-start">
+        {minis.map((c, i) => <MiniCourt key={`m${i}`} color={gradientOf(c)[0]} number={i + 1} />)}
+      </div>
+      <div className={`grid ${bigsCols} gap-3 mx-auto`} style={{ maxWidth: bigsMaxWidth }}>
+        {bigs.map((c, i) => <Court key={`b${i}`} confirmed={c.confirmed} tentative={c.tentative} colors={gradientOf(c)} number={miniCount + i + 1} />)}
+      </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// SMALL UI
+// ────────────────────────────────────────────────────────────────────
+const StatusPill = ({ status, small = false }) => {
+  const s = STATUS_PILL[status] || STATUS_PILL.undecided;
+  return (
+    <span className="inline-flex items-center justify-center rounded-full font-bold"
+      style={{ background: s.color, color: s.text, fontFamily: "'Bricolage Grotesque', sans-serif",
+        fontSize: small ? '10px' : '11px', padding: small ? '2px 8px' : '3px 10px', letterSpacing: '0.04em', lineHeight: 1 }}>
+      {s.label}
+    </span>
+  );
+};
+
+const Avatar = ({ name, size = 28, isYou = false }) => (
+  <div
+    className="rounded-full flex items-center justify-center flex-shrink-0"
+    style={{
+      width: size, height: size,
+      background: isYou ? 'rgba(197,229,0,0.15)' : 'var(--bg-input)',
+      color: isYou ? '#c5e500' : 'var(--text-secondary)',
+      fontFamily: "'Bricolage Grotesque', sans-serif",
+      fontWeight: 700,
+      fontSize: size * 0.4,
+      border: isYou ? '1px solid rgba(197,229,0,0.3)' : '1px solid var(--border-subtle)',
+    }}
+  >{initials(name)}</div>
+);
+
+const BrandHeader = () => (
+  <div className="flex items-baseline justify-center" style={{ letterSpacing: '-0.02em' }}>
+    <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: '#c5e500' }}>Pickle</span>
+    <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: 'var(--text-strong)' }}>Check</span>
+    <span style={{ display: 'inline-block', width: '5px', height: '5px', background: '#c5e500', borderRadius: '50%', margin: '0 1.5px', transform: 'translateY(1px)', flexShrink: 0 }} />
+    <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: 'var(--text-muted)' }}>in</span>
+  </div>
+);
+
+const IconButton = ({ children, onClick, label }) => (
+  <button onClick={onClick} aria-label={label} className="w-9 h-9 flex items-center justify-center rounded-full transition-colors"
+    style={{ background: 'var(--bg-glass)', color: 'var(--text-strong)' }}>
+    {children}
+  </button>
+);
+
+// ────────────────────────────────────────────────────────────────────
+// TOP BAR
+// ────────────────────────────────────────────────────────────────────
+const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, filterGroupName, onClearFilter, showBackButton, onBackToDefault }) => {
+  const showToggle = view === 'today' || view === 'week';
+  return (
+    <div className="space-y-2 pt-1 pb-1">
+      <div className="flex items-center justify-between">
+        <IconButton onClick={onMenuClick} label="Open groups menu"><Menu size={18} /></IconButton>
+        <BrandHeader />
+        <IconButton onClick={onSettingsClick} label="Open settings"><Settings size={18} /></IconButton>
+      </div>
+      {showToggle && (
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-full p-0.5" style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-subtle)' }}>
+            <button onClick={() => onViewChange('today')} className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
+              style={view === 'today' ? { background: '#c5e500', color: '#1a1f00', boxShadow: '0 0 12px rgba(197,229,0,0.35)' } : { color: 'var(--text-muted)' }}>NEXT UP</button>
+            <button onClick={() => onViewChange('week')} className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
+              style={view === 'week' ? { background: '#c5e500', color: '#1a1f00', boxShadow: '0 0 12px rgba(197,229,0,0.35)' } : { color: 'var(--text-muted)' }}>LIST</button>
+          </div>
+          {showBackButton && (
+            <button onClick={onBackToDefault} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide transition-all"
+              style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+              <Undo2 size={11} />NEXT UP
+            </button>
+          )}
+          {filterGroupName && (
+            <button onClick={onClearFilter} className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-strong)' }}>
+              {filterGroupName}<X size={11} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// SESSION CARD
+// (interactive=false for peek cards on either side)
+// ────────────────────────────────────────────────────────────────────
+const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true }) => {
+  const group = GROUP_INFO[session.groupId];
+  const overall = getOverallStatus(confirmed);
+  const o = COLOR[overall];
+  const numCourts = Math.max(1, Math.ceil((confirmed + tentative) / 4));
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const roster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
+    [session.id, confirmed, tentative, out, undecided, myStatus, myPartySize]);
+  const context = dayContext(session.dateObj);
+  const isContextLabel = ['TODAY', 'TOMORROW'].includes(context) || context.startsWith('IN ');
+
+  return (
+    <div className="rounded-3xl overflow-hidden backdrop-blur-xl"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)',
+        boxShadow: '0 24px 64px -16px rgba(0,0,0,0.45), 0 1px 0 var(--border-medium) inset' }}>
+
+      {/* Prominent header */}
+      <div className="px-6 pt-4 pb-3">
+        {/* Inline date + time on one line — primary info */}
+        <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
+          {(context === 'TODAY' || context === 'TOMORROW') ? (
+            <>
+              <span style={{ color: '#c5e500' }}>{context}</span>
+              <span style={{ color: 'var(--text-strong)' }}> · {fmtTime(session.dateObj)}</span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--text-strong)' }}>
+              {DAYS_SHORT[session.dateObj.getDay()].toUpperCase()} · {MONTHS[session.dateObj.getMonth()].toUpperCase()} {session.dateObj.getDate()} · {fmtTime(session.dateObj)}
+            </span>
+          )}
+        </div>
+
+        {/* Group name + court count — secondary */}
+        <div className="mt-1.5 text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+          <span>{group.name}</span>
+          <span style={{ color: 'var(--text-faint)' }}>·</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>{numCourts} CT</span>
+        </div>
+      </div>
+
+      {/* Courts */}
+      <div className="px-5 pt-1 pb-3">
+        <CourtGrid confirmed={confirmed} tentative={tentative} />
+      </div>
+
+      {/* Status badge */}
+      <div className="px-6 pb-4">
+        <div className="flex items-center gap-3 p-3 rounded-2xl"
+          style={{ background: `linear-gradient(90deg, ${o.glow} 0%, transparent 100%)`,
+            border: `1px solid ${o.glow}` }}>
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: o.dot, boxShadow: `0 0 12px ${o.dot}` }} />
+          <div>
+            <div className={`text-sm font-bold tracking-wide ${o.text}`}>{o.label}</div>
+            {o.sub && <div className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Party size chip (persistent, lets user set guests before or after opting in) */}
+      {interactive && (
+        <div className="px-5 pb-3">
+          <button onClick={onAdjustParty}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-full text-[12px] font-semibold transition-all"
+            style={displayPartySize > 1
+              ? { background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.35)' }
+              : { background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-medium)' }
+            }>
+            <Users size={13} />
+            {displayPartySize === 1
+              ? 'Just you · tap to bring guests'
+              : `Going as ${displayPartySize} (you + ${displayPartySize - 1}) · tap to adjust`}
+          </button>
+        </div>
+      )}
+
+      {/* Status buttons */}
+      <div className="grid grid-cols-3 gap-2 px-5 pb-4">
+        <ActionButton label="I'M IN" active={myStatus === 'in'} disabled={!interactive}
+          activeStyle={{ background: '#c5e500', color: '#0a0a0c', boxShadow: '0 0 24px rgba(197,229,0,0.5), 0 1px 0 rgba(255,255,255,0.18) inset' }}
+          onClick={() => interactive && onMyStatus('in')} />
+        <ActionButton label="MAYBE" active={myStatus === 'maybe'} disabled={!interactive}
+          activeStyle={{ background: '#fcd34d', color: '#1a1500', boxShadow: '0 0 24px rgba(252,211,77,0.4), 0 1px 0 rgba(255,255,255,0.18) inset' }}
+          onClick={() => interactive && onMyStatus('maybe')} />
+        <ActionButton label="OUT" active={myStatus === 'out'} disabled={!interactive}
+          activeStyle={{ background: '#52525b', color: '#fff', boxShadow: '0 0 18px rgba(82,82,91,0.4), 0 1px 0 rgba(255,255,255,0.18) inset' }}
+          onClick={() => interactive && onMyStatus('out')} />
+      </div>
+
+      {/* Roster toggle */}
+      <button
+        onClick={() => interactive && setRosterOpen(v => !v)}
+        className="w-full px-5 py-3 flex items-center justify-between text-left border-t transition-all"
+        style={{
+          borderColor: 'var(--border-medium)',
+          background: rosterOpen ? 'rgba(197,229,0,0.08)' : 'var(--bg-faint)',
+        }}
+      >
+        <span className="flex items-center gap-2.5">
+          <Users size={15} style={{ color: 'var(--text-secondary)' }} />
+          <span className="text-[13px] font-bold tracking-wide" style={{ color: 'var(--text-strong)' }}>
+            {rosterOpen ? 'Hide roster' : 'Show roster'}
+          </span>
+          <span className="text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded-full"
+            style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500' }}>
+            {confirmed} IN
+          </span>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+            of {confirmed + tentative + out + undecided}
+          </span>
+        </span>
+        <ChevronDown size={18} style={{ color: 'var(--text-secondary)', transform: rosterOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
+      </button>
+
+      {/* Roster expanded */}
+      {rosterOpen && (
+        <div className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+          <RosterSection title="IN"        names={roster.in}        color="#c5e500" lighter />
+          <RosterSection title="MAYBE"     names={roster.maybe}     color="#fcd34d" />
+          <RosterSection title="OUT"       names={roster.out}       color="#a1a1aa" />
+          <RosterSection title="UNDECIDED" names={roster.undecided} color="#71717a" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ActionButton = ({ label, active, activeStyle, onClick, disabled }) => (
+  <button onClick={onClick} disabled={disabled}
+    className="py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all"
+    style={active ? activeStyle : { background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)' }}>
+    {label}
+  </button>
+);
+
+const RosterSection = ({ title, names, color, lighter }) => {
+  if (!names || names.length === 0) {
+    return (
+      <div className="px-5 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border-subtle)' }}>
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
+          <div className="text-[10px] font-bold tracking-[0.2em]" style={{ color }}>{title} · 0</div>
+        </div>
+        <div className="text-[12px] text-zinc-600 italic ml-3.5">No one yet</div>
+      </div>
+    );
+  }
+  return (
+    <div className="px-5 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border-subtle)' }}>
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="w-1.5 h-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
+        <div className="text-[10px] font-bold tracking-[0.2em]" style={{ color }}>{title} · {names.length}</div>
+      </div>
+      <div className="space-y-1.5 ml-3.5">
+        {names.map((name, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <Avatar name={name} size={24} isYou={name === MOCK_USER.name} />
+            <span className="text-[13px]" style={{ color: name === MOCK_USER.name ? '#c5e500' : 'var(--text-strong)' }}>
+              {name === MOCK_USER.name ? `${name} (you)` : name}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// SESSION CAROUSEL — peeks prev/next during swipe
+// ────────────────────────────────────────────────────────────────────
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext }) => {
+  const prevSession = filteredSessions[currentIdx - 1] || null;
+  const currentSession = filteredSessions[currentIdx];
+  const nextSession = filteredSessions[currentIdx + 1] || null;
+
+  const canPrev = !!prevSession;
+  const canNext = !!nextSession;
+
+  const SWIPE_THRESHOLD = 130;
+  const [touchStartX, setTouchStartX] = useState(null);
+  const [touchStartY, setTouchStartY] = useState(null);
+  const [direction, setDirection] = useState(null);
+  const [delta, setDelta] = useState(0);
+  const [committing, setCommitting] = useState(null);
+  // skipTransition is true for exactly one render after a commit, so the
+  // track snaps to its new "centered" position without animating backwards
+  // through the shifted session content.
+  const [skipTransition, setSkipTransition] = useState(false);
+
+  useEffect(() => {
+    if (!committing) return;
+    const t = setTimeout(() => {
+      // Batch the state swap so the next render: shifts sessions, resets delta,
+      // and skips the transition. The user sees the same card stay put.
+      setSkipTransition(true);
+      if (committing === 'next') onNext();
+      else if (committing === 'prev') onPrev();
+      setDelta(0);
+      setCommitting(null);
+      setTouchStartX(null);
+      setTouchStartY(null);
+      setDirection(null);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [committing]);
+
+  // Re-enable transitions after two animation frames so the snap completes
+  // visually before the next swipe is allowed to animate.
+  useEffect(() => {
+    if (!skipTransition) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSkipTransition(false));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [skipTransition]);
+
+  const handleTouchStart = (e) => {
+    if (committing) return;
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+    setDirection(null);
+    setDelta(0);
+  };
+  const handleTouchMove = (e) => {
+    if (committing || touchStartX === null) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (direction === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      setDirection(Math.abs(dx) > Math.abs(dy) ? 'h' : 'v');
+    }
+    if (direction === 'h') {
+      let eff = dx;
+      if (eff > 0 && !canPrev) eff = eff / 4;
+      if (eff < 0 && !canNext) eff = eff / 4;
+      setDelta(eff);
+    }
+  };
+  const handleTouchEnd = () => {
+    if (committing) return;
+    if (direction === 'h' && delta > SWIPE_THRESHOLD && canPrev) {
+      setCommitting('prev');
+    } else if (direction === 'h' && delta < -SWIPE_THRESHOLD && canNext) {
+      setCommitting('next');
+    } else {
+      setDelta(0);
+      setTouchStartX(null);
+      setTouchStartY(null);
+      setDirection(null);
+    }
+  };
+
+  let trackDelta = delta;
+  if (committing === 'prev') trackDelta = window.innerWidth || 400;
+  if (committing === 'next') trackDelta = -(window.innerWidth || 400);
+
+  const transitionEnabled = !skipTransition && (committing || delta === 0);
+
+  return (
+    <div className="-mx-5 overflow-hidden" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+      <div
+        className="flex"
+        style={{
+          width: '300%',
+          transform: `translateX(calc(-33.3333% + ${trackDelta}px))`,
+          transition: transitionEnabled ? 'transform 300ms cubic-bezier(0.2, 0.9, 0.3, 1)' : 'none',
+          touchAction: 'pan-y',
+        }}
+      >
+        {/* Previous */}
+        <div className="px-5" style={{ flex: '0 0 33.3333%', width: '33.3333%' }}>
+          {prevSession ? (
+            <SessionCard
+              session={prevSession}
+              confirmed={prevSession.in} tentative={prevSession.maybe} out={prevSession.out} undecided={prevSession.undecided}
+              myStatus={prevSession.myStatus} onMyStatus={() => {}} interactive={false}
+            />
+          ) : <PeekPlaceholder label="No earlier sessions" />}
+        </div>
+        {/* Current */}
+        <div className="px-5" style={{ flex: '0 0 33.3333%', width: '33.3333%' }}>
+          <SessionCard
+            session={currentSession}
+            confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
+            myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={onMyStatus} onAdjustParty={onAdjustParty} interactive={true}
+          />
+        </div>
+        {/* Next */}
+        <div className="px-5" style={{ flex: '0 0 33.3333%', width: '33.3333%' }}>
+          {nextSession ? (
+            <SessionCard
+              session={nextSession}
+              confirmed={nextSession.in} tentative={nextSession.maybe} out={nextSession.out} undecided={nextSession.undecided}
+              myStatus={nextSession.myStatus} onMyStatus={() => {}} interactive={false}
+            />
+          ) : <PeekPlaceholder label="No upcoming sessions" />}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PeekPlaceholder = ({ label }) => (
+  <div className="rounded-3xl flex items-center justify-center py-20"
+    style={{ background: 'var(--bg-subtle)', border: '1px dashed var(--border-medium)' }}>
+    <div className="text-[12px] text-zinc-600">{label}</div>
+  </div>
+);
+
+// ────────────────────────────────────────────────────────────────────
+// WEEK / LIST VIEW
+// ────────────────────────────────────────────────────────────────────
+const WeekView = ({ sessions, onSelect }) => {
+  const byDate = useMemo(() => {
+    const groups = new Map();
+    sessions.forEach(s => {
+      const key = s.dateObj.toDateString();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s);
+    });
+    return Array.from(groups.entries());
+  }, [sessions]);
+  return (
+    <div className="space-y-2.5">
+      {byDate.map(([dateKey, daySessions]) => {
+        const day = daySessions[0].dateObj;
+        const ctx = dayContext(day);
+        return (
+          <div key={dateKey} className="rounded-2xl overflow-hidden"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', backdropFilter: 'blur(12px)' }}>
+            <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-white/5">
+              <div className="text-[11px] tracking-[0.18em] font-bold"
+                style={{ color: ['TODAY', 'TOMORROW'].includes(ctx) ? '#c5e500' : 'var(--text-secondary)' }}>
+                {ctx} · {DAYS_LONG[day.getDay()]}, {MONTHS[day.getMonth()]} {day.getDate()}
+              </div>
+              <div className="text-[10px] text-zinc-500 font-semibold">{daySessions.length} {daySessions.length === 1 ? 'session' : 'sessions'}</div>
+            </div>
+            {daySessions.map(s => {
+              const group = GROUP_INFO[s.groupId];
+              const overall = getOverallStatus(s.in);
+              const o = COLOR[overall];
+              return (
+                <button key={s.id} onClick={() => onSelect(s.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors text-left">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: o.dot, boxShadow: `0 0 8px ${o.dot}` }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{group.name}</div>
+                    <div className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+                      <span>{fmtTime(s.dateObj)}</span><span>·</span>
+                      <span className="font-semibold text-emerald-300">{s.in} IN</span>
+                      {s.maybe > 0 && <><span>·</span><span className="font-semibold text-amber-300">{s.maybe} MAYBE</span></>}
+                    </div>
+                  </div>
+                  <StatusPill status={s.myStatus} small />
+                  <ChevR size={14} style={{ color: 'var(--text-faint)' }} />
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// GROUPS MENU
+// ────────────────────────────────────────────────────────────────────
+const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover }) => {
+  const allIds = Object.keys(GROUP_INFO);
+  const allVisible = allIds.every(id => visibleGroups.has(id));
+  const noneVisible = visibleGroups.size === 0;
+  const toggle = (id) => {
+    const next = new Set(visibleGroups);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setVisibleGroups(next);
+  };
+  return (
+  <>
+    <div className="fixed inset-0 z-40 transition-opacity duration-300"
+      style={{ background: 'var(--bg-overlay)', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}
+      onClick={onClose} />
+    <div className="fixed top-0 left-0 bottom-0 z-50 w-80 max-w-[85vw] transition-transform duration-300 overflow-y-auto"
+      style={{ background: 'var(--bg-card-solid)', borderRight: '1px solid var(--border-subtle)',
+        transform: open ? 'translateX(0)' : 'translateX(-100%)', boxShadow: '0 0 40px rgba(0,0,0,0.45)' }}>
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] tracking-[0.2em] font-bold text-zinc-500">YOUR GROUPS</div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
+            <X size={16} style={{ color: 'var(--text-secondary)' }} />
+          </button>
+        </div>
+        <div className="text-[11px] text-zinc-500 mb-3 leading-snug">
+          Tap a group to filter your feed. Toggle the dot to show or hide a group in your default list.
+        </div>
+        <div className="flex gap-2 mb-3">
+          <button onClick={() => setVisibleGroups(new Set(allIds))}
+            disabled={allVisible}
+            className="flex-1 py-1.5 rounded-full text-[10px] font-bold tracking-wider disabled:opacity-40"
+            style={{ background: 'rgba(197,229,0,0.1)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.2)' }}>
+            SELECT ALL
+          </button>
+          <button onClick={() => setVisibleGroups(new Set())}
+            disabled={noneVisible}
+            className="flex-1 py-1.5 rounded-full text-[10px] font-bold tracking-wider disabled:opacity-40"
+            style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)', border: '1px solid var(--border-medium)' }}>
+            CLEAR VISIBLE
+          </button>
+        </div>
+        <div className="space-y-2.5">
+          {Object.values(GROUP_INFO).map(g => {
+            const isVisible = visibleGroups.has(g.id);
+            return (
+            <div key={g.id} className="rounded-2xl overflow-hidden transition-all"
+              style={{
+                background: 'var(--bg-subtle)',
+                border: isVisible ? '1px solid rgba(197,229,0,0.45)' : '1px solid var(--border-subtle)',
+                boxShadow: isVisible ? '0 0 14px rgba(197,229,0,0.08)' : 'none',
+                opacity: isVisible ? 1 : 0.6,
+              }}>
+              <div className="flex items-stretch">
+                <button onClick={() => onFilter(g.id)} className="flex-1 text-left p-3.5 min-w-0">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="text-base font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
+                    {g.role === 'admin' && (
+                      <span className="flex items-center gap-1 text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500' }}>
+                        <Shield size={10} />ADMIN
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-zinc-500">{g.schedule}</div>
+                  <div className="text-[11px] text-zinc-600 mt-0.5">{g.members} members</div>
+                </button>
+                <button onClick={() => toggle(g.id)}
+                  className="flex items-center justify-center px-3 transition-all"
+                  style={{ borderLeft: '1px solid var(--border-subtle)' }}
+                  aria-label={isVisible ? 'Hide from feed' : 'Show in feed'}>
+                  <div className="w-5 h-5 rounded-full transition-all"
+                    style={{
+                      background: isVisible ? '#c5e500' : 'transparent',
+                      border: isVisible ? '1px solid var(--text-tertiary)' : '1.5px solid var(--text-faint)',
+                      boxShadow: isVisible ? '0 0 10px rgba(197,229,0,0.55)' : 'none',
+                    }} />
+                </button>
+              </div>
+              <div className="flex border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                <button onClick={() => onAddInstance(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  <Plus size={12} />Add instance
+                </button>
+                {g.role === 'admin' && (
+                  <button onClick={() => onManage(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
+                    style={{ borderColor: 'var(--border-subtle)', color: 'rgba(197,229,0,0.85)' }}>
+                    Manage<ChevR size={11} />
+                  </button>
+                )}
+              </div>
+            </div>
+            );
+          })}
+        </div>
+        <button onClick={onDiscover} className="w-full mt-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+          style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px dashed var(--border-strong)' }}>
+          <Plus size={14} />Discover groups
+        </button>
+      </div>
+    </div>
+  </>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// SETTINGS / GROUP SETTINGS
+// ────────────────────────────────────────────────────────────────────
+const SettingsRow = ({ label, value, action, onClick }) => (
+  <button onClick={onClick} className="w-full flex items-center justify-between py-3.5 px-4 hover:bg-white/[0.02] transition-colors text-left">
+    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
+    <span className="flex items-center gap-1.5 text-sm text-zinc-500">{value}{action && <ChevR size={14} />}</span>
+  </button>
+);
+const ToggleRow = ({ label, sub, on, onChange }) => (
+  <div className="flex items-center justify-between py-3.5 px-4">
+    <div>
+      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</div>
+      {sub && <div className="text-[11px] text-zinc-500 mt-0.5">{sub}</div>}
+    </div>
+    <button onClick={() => onChange(!on)} className="w-10 h-6 rounded-full transition-colors flex-shrink-0"
+      style={{ background: on ? '#c5e500' : 'var(--bg-input-hover)' }}>
+      <div className="w-5 h-5 rounded-full bg-white transition-transform"
+        style={{ transform: on ? 'translateX(18px)' : 'translateX(2px)', boxShadow: '0 1px 3px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)' }} />
+    </button>
+  </div>
+);
+const SettingsSection = ({ title, children }) => (
+  <div className="mb-5">
+    <div className="text-[10px] tracking-[0.2em] font-bold text-zinc-500 mb-2 px-1 uppercase">{title}</div>
+    <div className="rounded-2xl overflow-hidden divide-y" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderColor: 'var(--border-subtle)' }}>
+      {children}
+    </div>
+  </div>
+);
+
+// Inline editable text field for settings rows
+const EditableRow = ({ label, value, onSave, type = 'text', placeholder }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  if (!editing) {
+    return (
+      <button onClick={() => setEditing(true)} className="w-full flex items-center justify-between py-3.5 px-4 text-left">
+        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
+        <span className="flex items-center gap-1.5 text-sm text-zinc-500 max-w-[55%] truncate">
+          {type === 'password' ? '••••••••' : (value || <span className="italic">{placeholder || 'Not set'}</span>)}
+          <ChevR size={14} />
+        </span>
+      </button>
+    );
+  }
+  return (
+    <div className="py-2.5 px-4">
+      <div className="text-[11px] text-zinc-500 mb-1.5 font-semibold tracking-wider uppercase">{label}</div>
+      <div className="flex gap-2">
+        <input autoFocus type={type} value={draft} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)}
+          className="flex-1 bg-transparent text-sm py-1.5 px-2 rounded-lg"
+          style={{ color: 'var(--text-strong)', border: '1px solid rgba(197,229,0,0.4)', outline: 'none' }} />
+        <button onClick={() => { onSave(draft); setEditing(false); }}
+          className="px-3 py-1.5 rounded-lg text-[11px] font-bold"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>Save</button>
+        <button onClick={() => { setDraft(value); setEditing(false); }}
+          className="px-2 py-1.5 rounded-lg text-[11px] font-bold"
+          style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Cancel</button>
+      </div>
+    </div>
+  );
+};
+
+// Inline stepper for numeric settings (party size, horizon, etc.)
+const StepperRow = ({ label, sub, value, onChange, min = 1, max = 10, unit }) => (
+  <div className="flex items-center justify-between py-3 px-4 gap-3">
+    <div className="min-w-0">
+      <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</div>
+      {sub && <div className="text-[11px] text-zinc-500 mt-0.5">{sub}</div>}
+    </div>
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <button onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}
+        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-lg leading-none disabled:opacity-30"
+        style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}>−</button>
+      <div className="text-sm font-bold tabular-nums min-w-[42px] text-center" style={{ color: 'var(--text-strong)', fontFamily: "'Bricolage Grotesque', sans-serif" }}>
+        {value}{unit && <span className="text-[11px] text-zinc-500 font-semibold ml-0.5">{unit}</span>}
+      </div>
+      <button onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max}
+        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-lg leading-none disabled:opacity-30"
+        style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}>+</button>
+    </div>
+  </div>
+);
+
+// Generic centered modal sheet
+const ModalSheet = ({ open, onClose, title, children }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0" style={{ background: 'var(--bg-overlay)' }} />
+      <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: 'var(--bg-modal)', border: '1px solid var(--border-medium)', boxShadow: '0 -10px 40px rgba(0,0,0,0.6)' }}>
+        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="text-base font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{title}</div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'var(--bg-glass)' }}>
+            <X size={16} style={{ color: 'var(--text-secondary)' }} />
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+};
+
+const ThemeModal = ({ open, onClose, theme, setTheme }) => {
+  const options = [
+    { id: 'dark',   label: 'Dark',   sub: 'Neon on charcoal',              available: true  },
+    { id: 'light',  label: 'Light',  sub: 'Bright surfaces, dark text',    available: true  },
+    { id: 'system', label: 'System', sub: 'Match your device setting',     available: false },
+  ];
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Theme">
+      <div className="space-y-2 text-sm">
+        {options.map(o => {
+          const selected = o.id === theme;
+          return (
+            <button key={o.id} disabled={!o.available}
+              onClick={() => { if (o.available) { setTheme(o.id); onClose(); } }}
+              className={`w-full flex items-center justify-between p-3 rounded-xl text-left ${o.available ? '' : 'cursor-not-allowed'}`}
+              style={{
+                background: selected ? 'rgba(197,229,0,0.12)' : 'var(--bg-subtle)',
+                border: selected ? '1px solid rgba(197,229,0,0.35)' : '1px solid var(--border-subtle)',
+                opacity: o.available ? 1 : 0.55,
+              }}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-4 h-4 rounded-full flex-shrink-0"
+                  style={{
+                    border: selected ? '5px solid #c5e500' : '1.5px solid var(--text-tertiary)',
+                    background: selected ? '#1a1f00' : 'transparent',
+                  }} />
+                <div className="min-w-0">
+                  <div className="font-bold" style={{ color: 'var(--text-strong)' }}>{o.label}</div>
+                  <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{o.sub}</div>
+                </div>
+              </div>
+              {!o.available && (
+                <span className="text-[9px] tracking-[0.15em] font-bold uppercase flex-shrink-0 px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)' }}>In dev</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </ModalSheet>
+  );
+};
+
+const AddInstanceModal = ({ groupId, onClose }) => {
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [notes, setNotes] = useState('');
+  const open = !!groupId;
+  const g = groupId ? GROUP_INFO[groupId] : null;
+  return (
+    <ModalSheet open={open} onClose={onClose} title={g ? `Add instance · ${g.name}` : 'Add instance'}>
+      <div className="space-y-3 text-sm">
+        <div className="text-[11px] text-zinc-500 leading-snug">
+          Create a one-off session outside the recurring schedule. The whole group will be notified.
+        </div>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Date</div>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Time</div>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Note (optional)</div>
+          <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Bring extra paddles"
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        <button onClick={onClose} disabled={!date || !time}
+          className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>Create instance</button>
+        <div className="text-[10px] text-zinc-600 text-center">Prototype — creation flow not yet wired to data layer.</div>
+      </div>
+    </ModalSheet>
+  );
+};
+
+const PartySizeModal = ({ control, onConfirm, onClose }) => {
+  const [size, setSize] = useState(1);
+  useEffect(() => { if (control) setSize(control.initialSize); }, [control]);
+  const open = !!control;
+  const actionLabel = (() => {
+    if (!control) return 'Confirm';
+    if (control.targetStatus === null) return 'Save';
+    return control.targetStatus === 'in' ? 'Confirm I\u2019m IN' : control.targetStatus === 'maybe' ? 'Confirm MAYBE' : 'Confirm';
+  })();
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Going as a group?">
+      <div className="space-y-4">
+        <div className="text-[12px] text-zinc-400 leading-snug">
+          How many players are committing in total? Includes yourself.
+        </div>
+        <div className="flex items-center justify-center gap-5 py-3">
+          <button onClick={() => setSize(Math.max(1, size - 1))} disabled={size <= 1}
+            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
+            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+            aria-label="Decrease party size">−</button>
+          <div className="text-center min-w-[80px]">
+            <div className="text-6xl font-bold tabular-nums leading-none" style={{ color: '#c5e500', fontFamily: "'Bricolage Grotesque', sans-serif", fontVariationSettings: "'wdth' 95" }}>{size}</div>
+            <div className="text-[10px] tracking-[0.2em] text-zinc-500 font-bold uppercase mt-2">{size === 1 ? 'Player' : 'Players'}</div>
+          </div>
+          <button onClick={() => setSize(Math.min(8, size + 1))} disabled={size >= 8}
+            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
+            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+            aria-label="Increase party size">+</button>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold"
+            style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>Cancel</button>
+          <button onClick={() => onConfirm(size)} className="flex-1 py-3 rounded-2xl text-sm font-bold"
+            style={{ background: '#c5e500', color: '#1a1f00' }}>{actionLabel}</button>
+        </div>
+      </div>
+    </ModalSheet>
+  );
+};
+
+const DiscoverGroupsModal = ({ open, onClose }) => {
+  const [query, setQuery] = useState('');
+  const fake = [
+    { id: 'cinc-1', name: 'Cincinnati Sunday Open Play', members: 32, location: 'Sawyer Point', public: true },
+    { id: 'cinc-2', name: 'Mason Morning Crew', members: 18, location: 'Life Time Mason', public: true },
+    { id: 'cinc-3', name: 'West Chester Pickleball', members: 47, location: 'Voice of America Park', public: true },
+  ];
+  const results = fake.filter(g => g.name.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Discover groups">
+      <div className="space-y-3 text-sm">
+        <div className="text-[11px] text-zinc-500 leading-snug">
+          Search public groups in your area. Private groups require an invite link or email invitation from an admin.
+        </div>
+        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or city"
+          className="w-full bg-transparent py-2.5 px-3 rounded-lg text-sm"
+          style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} autoFocus />
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {results.length === 0 && <div className="text-center text-[11px] text-zinc-500 py-6">No public groups found</div>}
+          {results.map(g => (
+            <div key={g.id} className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}>
+              <div className="min-w-0">
+                <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
+                <div className="text-[11px] text-zinc-500">{g.location} · {g.members} members</div>
+              </div>
+              <button className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider flex-shrink-0"
+                style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.25)' }}>
+                REQUEST JOIN
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — search results are placeholders.</div>
+      </div>
+    </ModalSheet>
+  );
+};
+const SettingsView = ({ onBack, settings, update, theme, setTheme }) => {
+  const { name, email, remind24, remind3, lockIn, summary, outRanges } = settings;
+  const [adding, setAdding] = useState(false);
+  const [newStart, setNewStart] = useState('');
+  const [newEnd, setNewEnd] = useState('');
+  const [newReason, setNewReason] = useState('');
+  const [themeOpen, setThemeOpen] = useState(false);
+  const addRange = () => {
+    if (!newStart || !newEnd) return;
+    update({ outRanges: [...outRanges, { id: Date.now(), start: newStart, end: newEnd, reason: newReason || 'Out' }] });
+    setNewStart(''); setNewEnd(''); setNewReason(''); setAdding(false);
+  };
+  const removeRange = (id) => update({ outRanges: outRanges.filter(r => r.id !== id) });
+  const fmtRange = (r) => {
+    const fmt = (d) => { const dt = new Date(d + 'T12:00'); return `${MONTHS[dt.getMonth()]} ${dt.getDate()}`; };
+    return `${fmt(r.start)} – ${fmt(r.end)}`;
+  };
+  return (
+    <div>
+      <div className="flex items-center gap-3 pb-4">
+        <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
+          <ArrowLeft size={18} style={{ color: 'var(--text-strong)' }} />
+        </button>
+        <div className="text-xl font-bold tracking-tight" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>Settings</div>
+      </div>
+      <SettingsSection title="Profile">
+        <div className="flex items-center gap-3 p-4">
+          <Avatar name={name} size={44} isYou />
+          <div className="min-w-0"><div className="text-sm font-bold truncate">{name}</div><div className="text-[12px] text-zinc-500 truncate">{email}</div></div>
+        </div>
+        <EditableRow label="Name" value={name} onSave={(v) => update({ name: v })} />
+        <EditableRow label="Email" value={email} onSave={(v) => update({ email: v })} type="email" />
+        <EditableRow label="Change password" value="" onSave={() => {}} type="password" placeholder="New password" />
+      </SettingsSection>
+      <SettingsSection title="Notifications">
+        <ToggleRow label="Night-before reminder" sub="24 hours before session" on={remind24} onChange={(v) => update({ remind24: v })} />
+        <ToggleRow label="3-hour reminder" sub="For unconfirmed sessions" on={remind3} onChange={(v) => update({ remind3: v })} />
+        <ToggleRow label="Lock-in nudge" sub="If you're MAYBE the night before" on={lockIn} onChange={(v) => update({ lockIn: v })} />
+        <ToggleRow label="Confirmation summary" sub="Even when you've checked in" on={summary} onChange={(v) => update({ summary: v })} />
+      </SettingsSection>
+      <SettingsSection title="Auto-out">
+        <div className="px-4 pt-3 pb-2 text-[11px] text-zinc-400 leading-snug">
+          Any session that falls within these date ranges will automatically be set to OUT. Useful for vacations or busy weeks.
+        </div>
+        {outRanges.map(r => (
+          <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm">{fmtRange(r)}</div>
+              <div className="text-[11px] text-zinc-500">{r.reason}</div>
+            </div>
+            <button onClick={() => removeRange(r.id)} className="text-[11px] text-zinc-500 hover:text-rose-400">Remove</button>
+          </div>
+        ))}
+        {adding ? (
+          <div className="px-4 py-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <input type="date" value={newStart} onChange={(e) => setNewStart(e.target.value)}
+                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+              <input type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)}
+                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+            </div>
+            <input type="text" value={newReason} onChange={(e) => setNewReason(e.target.value)} placeholder="Reason (optional)"
+              className="w-full bg-transparent py-1.5 px-2 rounded-lg text-sm"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+            <div className="flex gap-2">
+              <button onClick={addRange} disabled={!newStart || !newEnd} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>Add</button>
+              <button onClick={() => { setAdding(false); setNewStart(''); setNewEnd(''); setNewReason(''); }} className="px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
+            <Plus size={13} />Add out-range
+          </button>
+        )}
+      </SettingsSection>
+      <SettingsSection title="App">
+        <SettingsRow label="Theme" value={theme === 'light' ? 'Light' : theme === 'system' ? 'System' : 'Dark'} action onClick={() => setThemeOpen(true)} />
+        <SettingsRow label="About" action />
+      </SettingsSection>
+      <div className="text-center text-[10px] pt-2 pb-4" style={{ color: 'var(--text-faint)' }}><BrandHeader /><div className="mt-2">v0.1 · prototype</div></div>
+      <button className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Sign out</button>
+      <ThemeModal open={themeOpen} onClose={() => setThemeOpen(false)} theme={theme} setTheme={setTheme} />
+    </div>
+  );
+};
+
+const GroupSettingsView = ({ groupId, onBack, settings, update }) => {
+  const g = GROUP_INFO[groupId] || GROUP_INFO.cbt;
+  const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
+  const { name, location, allowAdhoc, isPublic, horizon, schedule } = s;
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [addingSlot, setAddingSlot] = useState(false);
+  const [slotDay, setSlotDay] = useState('SU');
+  const [slotTime, setSlotTime] = useState('19:00');
+  const dayLabel = (d) => ({ SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday' }[d]);
+  const addSlot = () => {
+    const [h, m] = slotTime.split(':').map(Number);
+    const time = `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+    update({ schedule: [...schedule, { id: Date.now(), label: `${dayLabel(slotDay)} · ${time}` }] });
+    setAddingSlot(false);
+  };
+  const removeSlot = (id) => update({ schedule: schedule.filter(x => x.id !== id) });
+  return (
+    <div>
+      <div className="flex items-center gap-3 pb-4">
+        <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
+          <ArrowLeft size={18} style={{ color: 'var(--text-strong)' }} />
+        </button>
+        <div className="min-w-0">
+          <div className="text-xl font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{name}</div>
+          <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider mt-0.5" style={{ color: '#c5e500' }}>
+            <Shield size={10} />ADMIN
+          </div>
+        </div>
+      </div>
+      <SettingsSection title="Group">
+        <EditableRow label="Name" value={name} onSave={(v) => update({ name: v })} />
+        <EditableRow label="Location" value={location} onSave={(v) => update({ location: v })} />
+        <ToggleRow label="Public group" sub={isPublic ? 'Searchable in Discover Groups' : 'Invite only · share URL or email'} on={isPublic} onChange={(v) => update({ isPublic: v })} />
+      </SettingsSection>
+      <SettingsSection title="Schedule">
+        {schedule.map(slot => (
+          <div key={slot.id} className="px-4 py-3 flex items-center justify-between gap-2">
+            <div className="text-sm">{slot.label}</div>
+            <button onClick={() => removeSlot(slot.id)} className="text-[11px] text-zinc-500 hover:text-rose-400">Remove</button>
+          </div>
+        ))}
+        {addingSlot ? (
+          <div className="px-4 py-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <select value={slotDay} onChange={(e) => setSlotDay(e.target.value)}
+                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }}>
+                {['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].map(d => <option key={d} value={d} style={{ background: 'var(--bg-modal)' }}>{dayLabel(d)}</option>)}
+              </select>
+              <input type="time" value={slotTime} onChange={(e) => setSlotTime(e.target.value)}
+                className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={addSlot} className="flex-1 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>Add slot</button>
+              <button onClick={() => setAddingSlot(false)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAddingSlot(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
+            <Plus size={13} />Add recurring slot
+          </button>
+        )}
+      </SettingsSection>
+      <SettingsSection title="Options">
+        <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={12} unit=" ahead" />
+        <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
+      </SettingsSection>
+      <SettingsSection title={`Members · ${g.members}`}>
+        {['Nicholas Morgan', 'Devin Smith', 'Pastor Mike', 'Aaron Tucker', 'Sara Klein'].map((mname, i) => (
+          <div key={i} className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Avatar name={mname} size={32} isYou={mname === MOCK_USER.name} />
+              <div className="text-sm">{mname === MOCK_USER.name ? `${mname} (you)` : mname}</div>
+            </div>
+            <div className="text-[10px] tracking-wider font-bold text-zinc-500">{i === 0 ? 'ADMIN' : 'MEMBER'}</div>
+          </div>
+        ))}
+        <button onClick={() => setInviteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
+          <Plus size={13} />Invite member
+        </button>
+      </SettingsSection>
+      <button className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Delete group</button>
+      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} />
+    </div>
+  );
+};
+
+const InviteMemberModal = ({ open, onClose, groupName }) => {
+  const [email, setEmail] = useState('');
+  const inviteUrl = `https://picklecheck.in/join/${(groupName || '').toLowerCase().replace(/\s+/g, '-')}`;
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Invite member">
+      <div className="space-y-3 text-sm">
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Share invite link</div>
+          <div className="flex gap-2">
+            <input readOnly value={inviteUrl}
+              className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-xs truncate"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)' }} />
+            <button onClick={() => navigator.clipboard?.writeText(inviteUrl)} className="px-3 py-2 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>Copy</button>
+          </div>
+        </div>
+        <div className="text-center text-[10px] text-zinc-600 my-2">— OR —</div>
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Email invitation</div>
+          <div className="flex gap-2">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com"
+              className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-sm"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+            <button disabled={!email.includes('@')} onClick={() => { setEmail(''); onClose(); }}
+              className="px-3 py-2 rounded-lg text-[11px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>Send</button>
+          </div>
+        </div>
+        <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — invitation send is a stub.</div>
+      </div>
+    </ModalSheet>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
+// DEMO CONTROLS
+// ────────────────────────────────────────────────────────────────────
+const DemoControls = ({ confirmed, setConfirmed, tentative, setTentative, out, setOut, undecided, setUndecided }) => (
+  <div className="rounded-3xl backdrop-blur-xl p-4 space-y-3"
+    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+    <div className="text-[10px] tracking-[0.25em] text-zinc-500 font-bold uppercase">Demo · adjust counts</div>
+    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+      <DemoStepper label="IN"    value={confirmed} onChange={setConfirmed} max={32} color="#86efac" />
+      <DemoStepper label="MAYBE" value={tentative} onChange={setTentative} max={8}  color="#fcd34d" />
+      <DemoStepper label="OUT"   value={out}       onChange={setOut}       max={16} color="#a1a1aa" />
+      <DemoStepper label="?"     value={undecided} onChange={setUndecided} max={16} color="#71717a" />
+    </div>
+    <div className="flex gap-1.5 flex-wrap pt-1">
+      {[3, 4, 6, 7, 8, 11, 12, 16, 24].map(n => (
+        <button key={n} onClick={() => { setConfirmed(n); setTentative(0); }}
+          className="text-xs px-2.5 py-1 rounded-full font-bold"
+          style={confirmed === n ? { background: '#c5e500', color: '#1a1f00' } : { background: 'var(--bg-glass)', color: 'var(--text-muted)' }}>
+          {n}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+const DemoStepper = ({ label, value, onChange, max, color }) => (
+  <div className="flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5"
+    style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}>
+    <div className="flex items-baseline gap-2 min-w-0">
+      <div className="text-[10px] tracking-wider text-zinc-400 font-bold uppercase">{label}</div>
+      <div className="text-base font-bold tabular-nums" style={{ color, fontFamily: "'Bricolage Grotesque', sans-serif" }}>{value}</div>
+    </div>
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onChange(Math.max(0, value - 1))}
+        disabled={value <= 0}
+        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-lg leading-none disabled:opacity-30"
+        style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+        aria-label={`Decrease ${label}`}
+      >−</button>
+      <button
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-lg leading-none disabled:opacity-30"
+        style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+        aria-label={`Increase ${label}`}
+      >+</button>
+    </div>
+  </div>
+);
+
+// ────────────────────────────────────────────────────────────────────
+// APP
+// ────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [view, setView] = useState('today');
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [filterGroupId, setFilterGroupId] = useState(null);
+  const [currentIdx, setCurrentIdx] = useState(DEFAULT_IDX);
+
+  const initial = MOCK_SESSIONS[DEFAULT_IDX];
+  const [confirmed, setConfirmed] = useState(initial.in);
+  const [tentative, setTentative] = useState(initial.maybe);
+  const [out, setOut] = useState(initial.out);
+  const [undecided, setUndecided] = useState(initial.undecided);
+  const [myStatus, setMyStatus] = useState(initial.myStatus);
+  const [myPartySize, setMyPartySize] = useState(1);
+  const [visibleGroups, setVisibleGroups] = useState(new Set(Object.keys(GROUP_INFO)));
+  const [addInstanceFor, setAddInstanceFor] = useState(null);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  // User settings — lifted here so they persist across view navigation
+  const [userSettings, setUserSettings] = useState({
+    name: MOCK_USER.name,
+    email: MOCK_USER.email,
+    remind24: true,
+    remind3: true,
+    lockIn: true,
+    summary: false,
+    outRanges: [{ id: 1, start: '2026-05-28', end: '2026-06-03', reason: 'Vacation' }],
+  });
+  const updateUserSettings = (patch) => setUserSettings(s => ({ ...s, ...patch }));
+  // Party size: sticky default for next IN/MAYBE commit, plus a modal control object
+  const [lastPartySize, setLastPartySize] = useState(1);
+  const [partyModal, setPartyModal] = useState(null); // { targetStatus, initialSize } | null
+  const [theme, setTheme] = useState('dark');
+  // Group settings keyed by groupId — also lifted for persistence
+  const [groupSettingsMap, setGroupSettingsMap] = useState(() => {
+    const m = {};
+    Object.values(GROUP_INFO).forEach(g => {
+      m[g.id] = {
+        name: g.name,
+        location: g.location,
+        allowAdhoc: true,
+        isPublic: false,
+        horizon: 4,
+        schedule: g.id === 'cbt'
+          ? [{ id: 1, label: 'Sunday · 7:00 PM' }]
+          : g.id === 'lt'
+            ? [{ id: 1, label: 'Monday · 6:00 AM' }, { id: 2, label: 'Tuesday · 6:00 AM' }, { id: 3, label: 'Wednesday · 6:00 AM' }, { id: 4, label: 'Thursday · 6:00 AM' }, { id: 5, label: 'Friday · 6:00 AM' }]
+            : [{ id: 1, label: 'Thursday · 5:00 PM' }],
+      };
+    });
+    return m;
+  });
+  const updateGroupSettings = (gid, patch) => {
+    setGroupSettingsMap(m => ({ ...m, [gid]: { ...(m[gid] || {}), ...patch } }));
+  };
+
+  const filtered = filterGroupId ? MOCK_SESSIONS.filter(s => s.groupId === filterGroupId) : MOCK_SESSIONS;
+  const safeIdx = Math.min(currentIdx, filtered.length - 1);
+  const filteredDefaultIdx = filtered.findIndex(s => !s.past);
+  const atDefault = safeIdx === filteredDefaultIdx;
+
+  const loadSession = (s) => {
+    if (!s) return;
+    setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided); setMyStatus(s.myStatus);
+    setMyPartySize(1); // reset — mock sessions don't carry party size
+  };
+
+  // Apply a status change with a specific party size. Updates buckets and state.
+  const applyStatusChange = (newStatus, newSize) => {
+    const oldSize = (myStatus === 'in' || myStatus === 'maybe') ? myPartySize : 1;
+    const actualNewSize = (newStatus === 'in' || newStatus === 'maybe') ? newSize : 1;
+    const setters = { in: setConfirmed, maybe: setTentative, out: setOut, undecided: setUndecided };
+    setters[myStatus]?.(v => Math.max(0, v - oldSize));
+    setters[newStatus]?.(v => v + actualNewSize);
+    setMyStatus(newStatus);
+    setMyPartySize(actualNewSize);
+  };
+
+  // Button tap on IN/MAYBE/OUT. Opens modal if user is committing with size > 1.
+  const handleMyStatus = (newStatus) => {
+    if (newStatus === myStatus) return;
+    // OUT/UNDECIDED don't track party size — direct commit at size 1
+    if (newStatus === 'out' || newStatus === 'undecided') {
+      applyStatusChange(newStatus, 1);
+      return;
+    }
+    // IN/MAYBE: figure out "intended" size — current size if already committed,
+    // otherwise the sticky default from last commit
+    const isCommitted = myStatus === 'in' || myStatus === 'maybe';
+    const intendedSize = isCommitted ? myPartySize : lastPartySize;
+    if (intendedSize <= 1) {
+      applyStatusChange(newStatus, 1);
+      setLastPartySize(1);
+    } else {
+      setPartyModal({ targetStatus: newStatus, initialSize: intendedSize });
+    }
+  };
+
+  // Tap on the party-size chip. If currently IN/MAYBE, modal will adjust count
+  // in-place. If undecided/out, modal updates the sticky default only — actual
+  // commit happens when the user later taps IN/MAYBE.
+  const handleAdjustParty = () => {
+    const isCommitted = myStatus === 'in' || myStatus === 'maybe';
+    setPartyModal({
+      targetStatus: isCommitted ? myStatus : null,
+      initialSize: isCommitted ? myPartySize : lastPartySize,
+    });
+  };
+
+  // Modal confirm
+  const handlePartyConfirm = (newSize) => {
+    if (!partyModal) return;
+    // null targetStatus = "prepare" mode: just update sticky, no commit
+    if (partyModal.targetStatus !== null) {
+      applyStatusChange(partyModal.targetStatus, newSize);
+    }
+    setLastPartySize(newSize);
+    setPartyModal(null);
+  };
+
+  // Displayed in the chip — sticky when not committed, live size when in/maybe
+  const displayPartySize = (myStatus === 'in' || myStatus === 'maybe') ? myPartySize : lastPartySize;
+  const goTo = (idx) => {
+    const s = filtered[idx];
+    if (!s) return;
+    setCurrentIdx(idx);
+    loadSession(s);
+  };
+  const goNext = () => goTo(safeIdx + 1);
+  const goPrev = () => goTo(safeIdx - 1);
+  const backToDefault = () => goTo(filteredDefaultIdx);
+
+  const goToSessionById = (id) => {
+    const idx = filtered.findIndex(s => s.id === id);
+    if (idx >= 0) { goTo(idx); setView('today'); }
+  };
+  const handleFilter = (gid) => {
+    setFilterGroupId(gid);
+    setGroupsOpen(false);
+    const newFiltered = MOCK_SESSIONS.filter(s => s.groupId === gid);
+    const newDefaultIdx = newFiltered.findIndex(s => !s.past);
+    const idx = newDefaultIdx >= 0 ? newDefaultIdx : 0;
+    setCurrentIdx(idx);
+    loadSession(newFiltered[idx]);
+    setView('today');
+  };
+  const handleClearFilter = () => {
+    setFilterGroupId(null);
+    setCurrentIdx(DEFAULT_IDX);
+    loadSession(MOCK_SESSIONS[DEFAULT_IDX]);
+  };
+  const handleManage = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-settings'); };
+
+  const filterGroupName = filterGroupId ? GROUP_INFO[filterGroupId].name : null;
+
+  return (
+    <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
+      style={{
+        ...THEME[theme],
+        background: 'var(--bg-app)',
+        color: 'var(--text-strong)',
+        backgroundImage: `
+          radial-gradient(ellipse 80% 50% at 50% -10%, var(--orb-green), transparent 60%),
+          radial-gradient(ellipse 60% 40% at 90% 30%, var(--orb-emerald), transparent 60%),
+          radial-gradient(ellipse 60% 40% at 10% 80%, var(--orb-rose), transparent 60%)
+        `,
+      }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        body, html { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        /* Light-theme overrides for Tailwind color utilities used throughout the app.
+           Inline styles already reference --text-* / --bg-* CSS vars; this block handles
+           the remaining className-based color references. */
+        .theme-light .text-zinc-100 { color: var(--text-strong) !important; }
+        .theme-light .text-zinc-200 { color: var(--text-strong) !important; }
+        .theme-light .text-zinc-300 { color: var(--text-primary) !important; }
+        .theme-light .text-zinc-400 { color: var(--text-muted) !important; }
+        .theme-light .text-zinc-500 { color: var(--text-tertiary) !important; }
+        .theme-light .text-zinc-600 { color: var(--text-faint) !important; }
+        .theme-light .text-zinc-700 { color: var(--text-disabled) !important; }
+        /* Light-theme status badge text — Tailwind 200/100 shades are too pale on white bg */
+        .theme-light .text-rose-200    { color: #9f1239 !important; }
+        .theme-light .text-orange-200  { color: #9a3412 !important; }
+        .theme-light .text-amber-100   { color: #854d0e !important; }
+        .theme-light .text-emerald-200 { color: #065f46 !important; }
+        .theme-light .text-emerald-300 { color: #047857 !important; }
+        .theme-light .text-amber-200   { color: #92400e !important; }
+        .theme-light .text-emerald-400 { color: #059669 !important; }
+        .theme-light .text-zinc-200    { color: #18181b !important; }
+        .theme-light .bg-white\\/\\[0\\.02\\] { background-color: rgba(0,0,0,0.03) !important; }
+        .theme-light .hover\\:bg-white\\/\\[0\\.02\\]:hover { background-color: rgba(0,0,0,0.04) !important; }
+        /* Tailwind border utilities used as dividers */
+        .theme-light .border-white\\/5  { border-color: var(--border-subtle) !important; }
+        .theme-light .border-white\\/10 { border-color: var(--border-medium) !important; }
+        /* Date/time native control polish for both themes */
+        .theme-dark input[type="date"], .theme-dark input[type="time"] { color-scheme: dark; }
+        .theme-light input[type="date"], .theme-light input[type="time"] { color-scheme: light; }
+        .theme-light select { color-scheme: light; }
+      `}</style>
+
+      <div className="max-w-md mx-auto px-5 py-3 relative">
+        <TopBar
+          onMenuClick={() => setGroupsOpen(true)}
+          onSettingsClick={() => setView('settings')}
+          view={view}
+          onViewChange={(v) => { setView(v); }}
+          filterGroupName={filterGroupName}
+          onClearFilter={handleClearFilter}
+          showBackButton={view === 'today' && !atDefault && filtered.length > 0}
+          onBackToDefault={backToDefault}
+        />
+
+        <div className="space-y-4 mt-3">
+          {view === 'today' && filtered.length > 0 && (
+            <>
+              <SessionCarousel
+                filteredSessions={filtered}
+                currentIdx={safeIdx}
+                confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
+                myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
+                onPrev={goPrev} onNext={goNext}
+              />
+              <DemoControls
+                confirmed={confirmed} setConfirmed={setConfirmed}
+                tentative={tentative} setTentative={setTentative}
+                out={out} setOut={setOut}
+                undecided={undecided} setUndecided={setUndecided}
+              />
+            </>
+          )}
+          {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
+          {view === 'settings' && <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} />}
+          {view === 'group-settings' && <GroupSettingsView groupId={activeGroupId} onBack={() => setView('today')} settings={groupSettingsMap[activeGroupId]} update={(patch) => updateGroupSettings(activeGroupId, patch)} />}
+        </div>
+      </div>
+
+      <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onFilter={handleFilter} onManage={handleManage}
+        visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
+        onAddInstance={(gid) => { setAddInstanceFor(gid); setGroupsOpen(false); }}
+        onDiscover={() => { setDiscoverOpen(true); setGroupsOpen(false); }} />
+      <AddInstanceModal groupId={addInstanceFor} onClose={() => setAddInstanceFor(null)} />
+      <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
+      <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
+    </div>
+  );
+}
