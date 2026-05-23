@@ -102,7 +102,7 @@ const NAMES = [
 
 const MOCK_SESSIONS = [
   { id: 's0', groupId: 'lt',  dateObj: new Date('2026-05-22T06:00'), in: 7, maybe: 0, out: 4, undecided: 3, myStatus: 'in',        past: true },
-  { id: 's1', groupId: 'ees', dateObj: new Date('2026-05-22T17:00'), in: 3, maybe: 2, out: 1, undecided: 3, myStatus: 'undecided', past: false },
+  { id: 's1', groupId: 'ees', dateObj: new Date('2026-05-22T17:00'), in: 5, maybe: 1, out: 0, undecided: 2, myStatus: 'undecided', past: false },
   { id: 's2', groupId: 'lt',  dateObj: new Date('2026-05-23T06:00'), in: 6, maybe: 1, out: 2, undecided: 5, myStatus: 'undecided', past: false },
   { id: 's3', groupId: 'cbt', dateObj: new Date('2026-05-25T19:00'), in: 5, maybe: 1, out: 1, undecided: 4, myStatus: 'undecided', past: false },
   { id: 's4', groupId: 'lt',  dateObj: new Date('2026-05-26T06:00'), in: 8, maybe: 0, out: 1, undecided: 5, myStatus: 'in',        past: false },
