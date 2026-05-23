@@ -791,7 +791,7 @@ const WeekView = ({ sessions, onSelect }) => {
               <div className="text-[10px] text-zinc-500 font-semibold">{daySessions.length} {daySessions.length === 1 ? 'session' : 'sessions'}</div>
             </div>
             {daySessions.map(s => {
-              const group = GROUP_INFO[s.groupId];
+              const groupName = s.groupName || GROUP_INFO[s.groupId]?.name || 'Group';
               const overall = getOverallStatus(s.in);
               const o = COLOR[overall];
               return (
@@ -799,7 +799,7 @@ const WeekView = ({ sessions, onSelect }) => {
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors text-left">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: o.dot, boxShadow: `0 0 8px ${o.dot}` }} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{group.name}</div>
+                    <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{groupName}</div>
                     <div className="text-[11px] text-zinc-500 flex items-center gap-1.5">
                       <span>{fmtTime(s.dateObj)}</span><span>·</span>
                       <span className="font-semibold text-emerald-300">{s.in} IN</span>
@@ -1082,14 +1082,27 @@ const ThemeModal = ({ open, onClose, theme, setTheme }) => {
   );
 };
 
-const AddInstanceModal = ({ groupId, onClose }) => {
+const AddInstanceModal = ({ groupId, groupName, onClose, onCreate }) => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
   const open = !!groupId;
   const g = groupId ? GROUP_INFO[groupId] : null;
+  const titleName = groupName || g?.name;
+  useEffect(() => { if (open) { setDate(''); setTime(''); setNotes(''); setBusy(false); setErr(null); } }, [open, groupId]);
+  const submit = async () => {
+    if (!date || !time) return;
+    setBusy(true); setErr(null);
+    try {
+      const startsAt = new Date(`${date}T${time}`).toISOString();
+      if (onCreate) await onCreate({ groupId, startsAt });
+      onClose();
+    } catch (e) { setErr(e.message || 'Could not create session'); setBusy(false); }
+  };
   return (
-    <ModalSheet open={open} onClose={onClose} title={g ? `Add instance · ${g.name}` : 'Add instance'}>
+    <ModalSheet open={open} onClose={onClose} title={titleName ? `Add instance · ${titleName}` : 'Add instance'}>
       <div className="space-y-3 text-sm">
         <div className="text-[11px] text-zinc-500 leading-snug">
           Create a one-off session outside the recurring schedule. The whole group will be notified.
@@ -1112,10 +1125,10 @@ const AddInstanceModal = ({ groupId, onClose }) => {
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
-        <button onClick={onClose} disabled={!date || !time}
+        <button onClick={submit} disabled={!date || !time || busy}
           className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
-          style={{ background: '#c5e500', color: '#1a1f00' }}>Create instance</button>
-        <div className="text-[10px] text-zinc-600 text-center">Prototype — creation flow not yet wired to data layer.</div>
+          style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Creating…' : 'Create instance'}</button>
+        {err && <div className="text-[12px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
       </div>
     </ModalSheet>
   );
@@ -1570,7 +1583,8 @@ export default function App({ account = null }) {
     setMyPartySize(1); // reset — mock sessions don't carry party size
   };
 
-  // Apply a status change with a specific party size. Updates buckets and state.
+  // Apply a status change with a specific party size. Updates buckets and state
+  // optimistically; in the real app it also persists the RSVP to the DB.
   const applyStatusChange = (newStatus, newSize) => {
     const oldSize = (myStatus === 'in' || myStatus === 'maybe') ? myPartySize : 1;
     const actualNewSize = (newStatus === 'in' || newStatus === 'maybe') ? newSize : 1;
@@ -1579,6 +1593,10 @@ export default function App({ account = null }) {
     setters[newStatus]?.(v => v + actualNewSize);
     setMyStatus(newStatus);
     setMyPartySize(actualNewSize);
+    if (!isDemo) {
+      const sid = filtered[safeIdx]?.id;
+      if (sid) live.setRsvp(sid, newStatus, actualNewSize);
+    }
   };
 
   // Button tap on IN/MAYBE/OUT. Opens modal if user is committing with size > 1.
@@ -1668,6 +1686,27 @@ export default function App({ account = null }) {
       return next;
     });
   }, [isDemo, live.groups]);
+
+  // Real app: keep the current card's counts/roster mirrored from the live session.
+  useEffect(() => {
+    if (isDemo) return;
+    const s = filtered[safeIdx];
+    if (s) {
+      setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided);
+      setMyStatus(s.myStatus); setMyPartySize(s.myPartySize || 1);
+    }
+  }, [isDemo, safeIdx, live.sessions, filterGroupId]);
+
+  // Real app: on first load, land on the next upcoming session.
+  const didInitIdx = useRef(false);
+  useEffect(() => {
+    if (isDemo || didInitIdx.current) return;
+    if (live.sessions.length > 0) {
+      const idx = live.sessions.findIndex((s) => !s.past);
+      setCurrentIdx(idx >= 0 ? idx : 0);
+      didInitIdx.current = true;
+    }
+  }, [isDemo, live.sessions]);
 
   return (
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
@@ -1802,7 +1841,8 @@ export default function App({ account = null }) {
         onCreateGroup={() => { setGroupsOpen(false); setCreateGroupOpen(true); }}
         onAddInstance={(gid) => { setAddInstanceFor(gid); setGroupsOpen(false); }}
         onDiscover={() => { setDiscoverOpen(true); setGroupsOpen(false); }} />
-      <AddInstanceModal groupId={addInstanceFor} onClose={() => setAddInstanceFor(null)} />
+      <AddInstanceModal groupId={addInstanceFor} groupName={addInstanceFor ? groupInfo[addInstanceFor]?.name : null}
+        onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)} onCreate={live.createGroup} />
