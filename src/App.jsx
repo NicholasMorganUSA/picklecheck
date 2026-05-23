@@ -92,10 +92,10 @@ const GROUP_INFO = {
 
 // Demo runs on the real current time, so its dates are never stale.
 const MOCK_NOW = new Date();
-const MOCK_USER = { name: 'Nicholas Morgan', email: 'nick@example.com', initials: 'NM' };
+const MOCK_USER = { name: 'Pickleballer', email: 'demo@picklecheck.in', initials: 'PB' };
 
 const NAMES = [
-  'Nicholas Morgan', 'Devin Smith', 'Aaron Tucker', 'Sara Klein', 'Jay Pickett',
+  'Pickleballer', 'Devin Smith', 'Aaron Tucker', 'Sara Klein', 'Jay Pickett',
   'Marcus Lee', 'Brad Tower', 'Mike Reed', 'Tom Brennan', 'Lisa Park',
   'Chris Day', 'Dan Hill', 'Pat Cole', 'Bren Adams', 'Megan Ross',
   'Will Foster', 'Jen Kim', 'Ben Walsh', 'Kyle James', 'Tara Quinn',
@@ -150,7 +150,7 @@ const DEFAULT_IDX = 0;
 function generateRoster(session) {
   const seed = parseInt(session.id.replace('s', '')) || 0;
   // Always include "you" in IN, MAYBE, OUT, or UNDECIDED based on myStatus
-  const others = NAMES.slice(1); // exclude Nicholas Morgan from the pool
+  const others = NAMES.slice(1); // exclude the demo "you" (NAMES[0]) from the pool
   const shuffled = [...others].sort((a, b) => {
     const ha = (a.charCodeAt(0) * 7 + a.charCodeAt(1) * 3 + seed * 13) % 1000;
     const hb = (b.charCodeAt(0) * 7 + b.charCodeAt(1) * 3 + seed * 13) % 1000;
@@ -169,7 +169,7 @@ function generateRoster(session) {
   const counts = { in: session.in, maybe: session.maybe, out: session.out, undecided: session.undecided };
   const myCount = (session.myStatus === 'in' || session.myStatus === 'maybe') ? (session.myPartySize || 1) : 1;
   if (counts[session.myStatus] > 0) {
-    const youLabel = myCount > 1 ? `Nicholas Morgan +${myCount - 1}` : 'Nicholas Morgan';
+    const youLabel = myCount > 1 ? `${MOCK_USER.name} +${myCount - 1}` : MOCK_USER.name;
     lists[session.myStatus].push(youLabel);
     counts[session.myStatus] = Math.max(0, counts[session.myStatus] - myCount);
   }
@@ -1400,6 +1400,28 @@ const DiscoverGroupsModal = ({ open, onClose, onJoin, myGroupIds = [] }) => {
     </ModalSheet>
   );
 };
+// In the demo, the gear opens a sign-up prompt instead of real settings.
+const DemoSettings = ({ onBack }) => (
+  <div>
+    <div className="flex items-center gap-3 pb-4">
+      <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
+        <ArrowLeft size={18} style={{ color: 'var(--text-strong)' }} />
+      </button>
+      <div className="text-xl font-bold tracking-tight" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>Demo</div>
+    </div>
+    <div className="rounded-3xl px-6 py-10 text-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)' }}>
+      <BrandHeader />
+      <div className="text-lg font-bold mt-4 mb-1.5" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: 'var(--text-strong)' }}>You&rsquo;re in the demo</div>
+      <div className="text-[13px] mb-6 leading-snug" style={{ color: 'var(--text-muted)' }}>
+        A sandbox with sample data — nothing here is saved. Create a free account to start your own groups, invite players, and check in for real.
+      </div>
+      <a href="/" className="inline-block px-7 py-3 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>
+        Sign up / Log in
+      </a>
+    </div>
+  </div>
+);
+
 const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) => {
   const { name, email, remind24, remind3, lockIn, summary, outRanges } = settings;
   // In the real app, profile name/email come from the signed-in account.
@@ -2115,7 +2137,10 @@ export default function App({ account = null }) {
             )
           ))}
           {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
-          {view === 'settings' && <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} />}
+          {view === 'settings' && (isDemo
+            ? <DemoSettings onBack={() => setView('today')} />
+            : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} />
+          )}
           {view === 'group-settings' && (isDemo ? (
             <GroupSettingsView groupId={activeGroupId} onBack={() => setView('today')} settings={groupSettingsMap[activeGroupId]} update={(patch) => updateGroupSettings(activeGroupId, patch)} isDemo />
           ) : (() => {
