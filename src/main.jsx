@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.jsx';
 import AppGate from './AppGate.jsx';
+import Join from './components/Join.jsx';
 import { AuthProvider } from './lib/auth.jsx';
 import './index.css';
 
@@ -16,6 +17,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/app" element={<AppGate />} />
           {/* Public demo — no login, in-memory sandbox */}
           <Route path="/demo" element={<App />} />
+          {/* Invite link — sign in (if needed) then join the group */}
+          <Route path="/join/:token" element={<Join />} />
           {/* Unknown paths fall back to the app (which prompts login) */}
           <Route path="*" element={<AppGate />} />
         </Routes>

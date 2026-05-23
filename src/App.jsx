@@ -1,7 +1,7 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
-import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, Shield, ChevronDown, Undo2, Users } from "lucide-react";
+import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
-import { inviteUrl } from "./lib/data.js";
+import { inviteUrl, createInvite } from "./lib/data.js";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -452,12 +452,12 @@ const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, filterGroupN
 // SESSION CARD
 // (interactive=false for peek cards on either side)
 // ────────────────────────────────────────────────────────────────────
-const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name }) => {
-  // Real sessions carry groupName + roster; the mock prototype falls back to GROUP_INFO/generateRoster.
+const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name, onPrev, onNext, canPrev = false, canNext = false, canEdit = false, onEdit }) => {
+  // Real sessions carry groupName + roster + location; the mock prototype falls back to GROUP_INFO/generateRoster.
   const groupName = session.groupName || GROUP_INFO[session.groupId]?.name || 'Group';
+  const location = session.location || GROUP_INFO[session.groupId]?.location || null;
   const overall = getOverallStatus(confirmed);
   const o = COLOR[overall];
-  const numCourts = Math.max(1, Math.ceil((confirmed + tentative) / 4));
   const [rosterOpen, setRosterOpen] = useState(false);
   const computedRoster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
     [session.id, confirmed, tentative, out, undecided, myStatus, myPartySize]);
@@ -466,32 +466,62 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
   const isContextLabel = ['TODAY', 'TOMORROW'].includes(context) || context.startsWith('IN ');
 
   return (
-    <div className="rounded-3xl overflow-hidden backdrop-blur-xl"
+    <div className="rounded-3xl overflow-hidden backdrop-blur-xl relative"
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)',
-        boxShadow: '0 24px 64px -16px rgba(0,0,0,0.45), 0 1px 0 var(--border-medium) inset' }}>
+        boxShadow: '0 24px 64px -16px rgba(0,0,0,0.45), 0 1px 0 var(--border-medium) inset',
+        opacity: session.cancelled ? 0.72 : 1 }}>
+      {interactive && canEdit && (
+        <button onClick={onEdit} aria-label="Edit session"
+          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full"
+          style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}>
+          <Pencil size={14} />
+        </button>
+      )}
+      {session.cancelled && (
+        <div className="absolute top-3 left-3 z-10 text-[10px] font-bold tracking-wider px-2 py-1 rounded-full"
+          style={{ background: 'rgba(244,63,94,0.18)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.35)' }}>
+          CANCELLED
+        </div>
+      )}
 
-      {/* Prominent header */}
-      <div className="px-6 pt-4 pb-3">
-        {/* Inline date + time on one line — primary info */}
-        <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
-          {(context === 'TODAY' || context === 'TOMORROW') ? (
-            <>
-              <span style={{ color: '#c5e500' }}>{context}</span>
-              <span style={{ color: 'var(--text-strong)' }}> · {fmtTime(session.dateObj)}</span>
-            </>
-          ) : (
-            <span style={{ color: 'var(--text-strong)' }}>
-              {DAYS_SHORT[session.dateObj.getDay()].toUpperCase()} · {MONTHS[session.dateObj.getMonth()].toUpperCase()} {session.dateObj.getDate()} · {fmtTime(session.dateObj)}
-            </span>
+      {/* Header — group name above, date+time centered with nav arrows, location below */}
+      <div className="px-5 pt-4 pb-3 text-center">
+        <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{groupName}</div>
+        <div className="flex items-center justify-center gap-1.5">
+          {interactive && (
+            <button onClick={onPrev} disabled={!canPrev} aria-label="Previous session"
+              className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
+            {(context === 'TODAY' || context === 'TOMORROW') ? (
+              <>
+                <span style={{ color: '#c5e500' }}>{context}</span>
+                <span style={{ color: 'var(--text-strong)' }}> · {fmtTime(session.dateObj)}</span>
+              </>
+            ) : (
+              <span style={{ color: 'var(--text-strong)' }}>
+                {DAYS_SHORT[session.dateObj.getDay()].toUpperCase()} · {MONTHS[session.dateObj.getMonth()].toUpperCase()} {session.dateObj.getDate()} · {fmtTime(session.dateObj)}
+              </span>
+            )}
+          </div>
+          {interactive && (
+            <button onClick={onNext} disabled={!canNext} aria-label="Next session"
+              className="p-1 flex-shrink-0 disabled:opacity-20 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
+              <ChevR size={22} />
+            </button>
           )}
         </div>
-
-        {/* Group name + court count — secondary */}
-        <div className="mt-1.5 text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-          <span>{groupName}</span>
-          <span style={{ color: 'var(--text-faint)' }}>·</span>
-          <span style={{ color: 'var(--text-tertiary)' }}>{numCourts} CT</span>
-        </div>
+        {location && (
+          <div className="text-[12px] mt-1 flex items-center justify-center gap-1"
+            style={session.locationDiffers
+              ? { color: '#c5e500', fontWeight: 700, textShadow: '0 0 10px rgba(197,229,0,0.55)' }
+              : { color: 'var(--text-tertiary)' }}>
+            {session.locationDiffers && <MapPin size={12} />}
+            {location}
+          </div>
+        )}
       </div>
 
       {/* Courts */}
@@ -623,7 +653,7 @@ const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }
 // ────────────────────────────────────────────────────────────────────
 // SESSION CAROUSEL — peeks prev/next during swipe
 // ────────────────────────────────────────────────────────────────────
-const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name }) => {
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit }) => {
   const prevSession = filteredSessions[currentIdx - 1] || null;
   const currentSession = filteredSessions[currentIdx];
   const nextSession = filteredSessions[currentIdx + 1] || null;
@@ -738,6 +768,8 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
             confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
             myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={onMyStatus} onAdjustParty={onAdjustParty} interactive={true}
             meName={meName}
+            onPrev={onPrev} onNext={onNext} canPrev={canPrev} canNext={canNext}
+            canEdit={canEdit} onEdit={onEdit}
           />
         </div>
         {/* Next */}
@@ -821,7 +853,7 @@ const WeekView = ({ sessions, onSelect }) => {
 // ────────────────────────────────────────────────────────────────────
 // GROUPS MENU
 // ────────────────────────────────────────────────────────────────────
-const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, isDemo = false }) => {
+const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, onInviteMember, isDemo = false }) => {
   const allIds = groups.map((g) => g.id);
   const allVisible = allIds.every(id => visibleGroups.has(id));
   const noneVisible = visibleGroups.size === 0;
@@ -899,18 +931,34 @@ const GroupsMenu = ({ open, onClose, onFilter, onManage, visibleGroups, setVisib
                     }} />
                 </button>
               </div>
-              <div className="flex border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                <button onClick={() => onAddInstance(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1"
-                  style={{ color: 'var(--text-secondary)' }}>
-                  <Plus size={12} />Add instance
-                </button>
-                {g.role === 'admin' && (
-                  <button onClick={() => onManage(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
-                    style={{ borderColor: 'var(--border-subtle)', color: 'rgba(197,229,0,0.85)' }}>
-                    Manage<ChevR size={11} />
-                  </button>
-                )}
-              </div>
+              {(() => {
+                const showAdd = isDemo || g.role === 'admin' || g.allow_adhoc;
+                const showInvite = (g.role === 'admin' || g.allow_member_invites) && !!onInviteMember;
+                const showManage = g.role === 'admin';
+                if (!showAdd && !showInvite && !showManage) return null;
+                return (
+                  <div className="flex border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                    {showAdd && (
+                      <button onClick={() => onAddInstance(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1"
+                        style={{ color: 'var(--text-secondary)' }}>
+                        <Plus size={12} />Add instance
+                      </button>
+                    )}
+                    {showInvite && (
+                      <button onClick={() => onInviteMember(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
+                        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                        <Plus size={11} />Invite
+                      </button>
+                    )}
+                    {showManage && (
+                      <button onClick={() => onManage(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
+                        style={{ borderColor: 'var(--border-subtle)', color: 'rgba(197,229,0,0.85)' }}>
+                        Manage<ChevR size={11} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             );
           })}
@@ -1082,22 +1130,23 @@ const ThemeModal = ({ open, onClose, theme, setTheme }) => {
   );
 };
 
-const AddInstanceModal = ({ groupId, groupName, onClose, onCreate }) => {
+const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate }) => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [notes, setNotes] = useState('');
+  const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const open = !!groupId;
   const g = groupId ? GROUP_INFO[groupId] : null;
   const titleName = groupName || g?.name;
-  useEffect(() => { if (open) { setDate(''); setTime(''); setNotes(''); setBusy(false); setErr(null); } }, [open, groupId]);
+  // Default the location to the group's standing location; admin can override per session.
+  useEffect(() => { if (open) { setDate(''); setTime(''); setLocation(groupLocation || ''); setBusy(false); setErr(null); } }, [open, groupId, groupLocation]);
   const submit = async () => {
     if (!date || !time) return;
     setBusy(true); setErr(null);
     try {
       const startsAt = new Date(`${date}T${time}`).toISOString();
-      if (onCreate) await onCreate({ groupId, startsAt });
+      if (onCreate) await onCreate({ groupId, startsAt, location: location.trim() || null });
       onClose();
     } catch (e) { setErr(e.message || 'Could not create session'); setBusy(false); }
   };
@@ -1120,8 +1169,8 @@ const AddInstanceModal = ({ groupId, groupName, onClose, onCreate }) => {
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
         <label className="block">
-          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Note (optional)</div>
-          <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Bring extra paddles"
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location</div>
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
@@ -1129,6 +1178,84 @@ const AddInstanceModal = ({ groupId, groupName, onClose, onCreate }) => {
           className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
           style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Creating…' : 'Create instance'}</button>
         {err && <div className="text-[12px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
+      </div>
+    </ModalSheet>
+  );
+};
+
+const EditInstanceModal = ({ session, onClose, onSave, onDelete, onToggleCancel }) => {
+  const open = !!session;
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [confirmDel, setConfirmDel] = useState(false);
+  useEffect(() => {
+    if (session) {
+      const d = session.dateObj;
+      const pad = (n) => String(n).padStart(2, '0');
+      setDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+      setTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+      setLocation(session.location || '');
+      setBusy(false); setErr(''); setConfirmDel(false);
+    }
+  }, [session]);
+  const save = async () => {
+    if (!date || !time) return;
+    setBusy(true); setErr('');
+    try { await onSave({ starts_at: new Date(`${date}T${time}`).toISOString(), location: location.trim() || null }); onClose(); }
+    catch (e) { setErr(e.message || 'Could not save'); setBusy(false); }
+  };
+  const toggleCancel = async () => {
+    setBusy(true); setErr('');
+    try { await onToggleCancel(!session.cancelled); onClose(); }
+    catch (e) { setErr(e.message || 'Could not update'); setBusy(false); }
+  };
+  const del = async () => {
+    if (!confirmDel) { setConfirmDel(true); return; }
+    setBusy(true); setErr('');
+    try { await onDelete(); onClose(); }
+    catch (e) { setErr(e.message || 'Could not delete'); setBusy(false); }
+  };
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Edit session">
+      <div className="space-y-3 text-sm">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Date</div>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+          </label>
+          <label className="block">
+            <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Time</div>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+              className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+          </label>
+        </div>
+        <label className="block">
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location</div>
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
+            className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        </label>
+        <button onClick={save} disabled={!date || !time || busy}
+          className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Saving…' : 'Save changes'}</button>
+        {err && <div className="text-[12px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={toggleCancel} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold"
+            style={{ background: 'var(--bg-input)', color: session?.cancelled ? '#86efac' : '#fcd34d' }}>
+            {session?.cancelled ? 'Un-cancel' : 'Cancel session'}
+          </button>
+          <button onClick={del} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1.5"
+            style={{ background: 'rgba(244,63,94,0.12)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.25)' }}>
+            <Trash2 size={13} />{confirmDel ? 'Tap again to delete' : 'Delete'}
+          </button>
+        </div>
+        <div className="text-[10px] text-zinc-600 text-center">Cancel keeps the session visible as &ldquo;cancelled.&rdquo; Delete removes it entirely.</div>
       </div>
     </ModalSheet>
   );
@@ -1315,7 +1442,7 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   const g = GROUP_INFO[groupId] || GROUP_INFO.cbt;
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
-  const { name, location, allowAdhoc, isPublic, horizon = 4, schedule = [] } = s;
+  const { name, location, allowAdhoc, isPublic, horizon = 4, schedule = [], allowMemberInvites = false } = s;
   const memberList = members ?? [
     { full_name: 'Nicholas Morgan', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
     { full_name: 'Pastor Mike', role: 'member' }, { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' },
@@ -1349,6 +1476,7 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
       <SettingsSection title="Options">
         <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={12} unit=" ahead" />
         <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
+        <ToggleRow label="Members can invite" sub="Let any member share a join link" on={allowMemberInvites} onChange={(v) => update({ allowMemberInvites: v })} />
       </SettingsSection>
       <SettingsSection title={`Members · ${memberCount}`}>
         {memberList.map((m, i) => {
@@ -1369,38 +1497,63 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
         </button>
       </SettingsSection>
       <button className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Delete group</button>
-      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} />
+      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} groupId={groupId} real={!isDemo} />
     </div>
   );
 };
 
-const InviteMemberModal = ({ open, onClose, groupName }) => {
+const InviteMemberModal = ({ open, onClose, groupName, groupId, real = false }) => {
   const [email, setEmail] = useState('');
-  const inviteUrl = `https://picklecheck.in/join/${(groupName || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const [link, setLink] = useState('');
+  const [genLoading, setGenLoading] = useState(false);
+  const [genErr, setGenErr] = useState('');
+  useEffect(() => { if (!open) { setLink(''); setGenErr(''); setEmail(''); } }, [open]);
+  const generate = async () => {
+    setGenLoading(true); setGenErr('');
+    try { const inv = await createInvite(groupId); setLink(inviteUrl(inv.token)); }
+    catch (e) { setGenErr(e.message || 'Could not create link'); }
+    setGenLoading(false);
+  };
+  const fakeLink = `https://picklecheck.in/join/${(groupName || '').toLowerCase().replace(/\s+/g, '-')}`;
+  const shownLink = real ? link : fakeLink;
   return (
     <ModalSheet open={open} onClose={onClose} title="Invite member">
       <div className="space-y-3 text-sm">
         <div>
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Share invite link</div>
-          <div className="flex gap-2">
-            <input readOnly value={inviteUrl}
-              className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-xs truncate"
-              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)' }} />
-            <button onClick={() => navigator.clipboard?.writeText(inviteUrl)} className="px-3 py-2 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>Copy</button>
-          </div>
+          {real && !link ? (
+            <button onClick={generate} disabled={genLoading}
+              className="w-full py-2.5 rounded-lg text-[12px] font-bold disabled:opacity-50"
+              style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+              {genLoading ? 'Generating…' : 'Generate invite link'}
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <input readOnly value={shownLink}
+                className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-xs truncate"
+                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)' }} />
+              <button onClick={() => navigator.clipboard?.writeText(shownLink)} className="px-3 py-2 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>Copy</button>
+            </div>
+          )}
+          {genErr && <div className="text-[11px] mt-1" style={{ color: '#fb7185' }}>{genErr}</div>}
+          {real && <div className="text-[10px] text-zinc-600 mt-1.5">Anyone with this link can join after signing in with Google.</div>}
         </div>
-        <div className="text-center text-[10px] text-zinc-600 my-2">— OR —</div>
-        <div>
-          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Email invitation</div>
-          <div className="flex gap-2">
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com"
-              className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-sm"
-              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
-            <button disabled={!email.includes('@')} onClick={() => { setEmail(''); onClose(); }}
-              className="px-3 py-2 rounded-lg text-[11px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>Send</button>
-          </div>
-        </div>
-        <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — invitation send is a stub.</div>
+        {!real && (
+          <>
+            <div className="text-center text-[10px] text-zinc-600 my-2">— OR —</div>
+            <div>
+              <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Email invitation</div>
+              <div className="flex gap-2">
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com"
+                  className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-sm"
+                  style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+                <button disabled={!email.includes('@')} onClick={() => { setEmail(''); onClose(); }}
+                  className="px-3 py-2 rounded-lg text-[11px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>Send</button>
+              </div>
+            </div>
+            <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — email send is a stub.</div>
+          </>
+        )}
       </div>
     </ModalSheet>
   );
@@ -1518,6 +1671,8 @@ export default function App({ account = null }) {
   const sessions = isDemo ? MOCK_SESSIONS : live.sessions;
   const groupInfo = isDemo ? GROUP_INFO : Object.fromEntries((live.groups || []).map((g) => [g.id, g]));
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [inviteForGroup, setInviteForGroup] = useState(null);
+  const [editSession, setEditSession] = useState(null);
   const [view, setView] = useState('today');
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState(null);
@@ -1576,6 +1731,10 @@ export default function App({ account = null }) {
   const safeIdx = Math.min(currentIdx, filtered.length - 1);
   const filteredDefaultIdx = filtered.findIndex(s => !s.past);
   const atDefault = safeIdx === filteredDefaultIdx;
+  const currentSession = filtered[safeIdx];
+  // Admins of the group OR the session's creator can edit/cancel/delete it.
+  const canEditCurrent = !isDemo && !!currentSession && !!account?.user &&
+    (groupInfo[currentSession.groupId]?.role === 'admin' || currentSession.createdBy === account.user.id);
 
   const loadSession = (s) => {
     if (!s) return;
@@ -1802,6 +1961,7 @@ export default function App({ account = null }) {
                 myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
                 onPrev={goPrev} onNext={goNext}
                 meName={meName}
+                canEdit={canEditCurrent} onEdit={() => setEditSession(currentSession)}
               />
             )
           ))}
@@ -1812,7 +1972,7 @@ export default function App({ account = null }) {
           ) : (() => {
             const ag = (live.groups || []).find(g => g.id === activeGroupId);
             if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
-            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 4, schedule: [] };
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 4, schedule: [], allowMemberInvites: ag.allow_member_invites };
             return (
               <GroupSettingsView
                 groupId={activeGroupId}
@@ -1826,6 +1986,7 @@ export default function App({ account = null }) {
                   if ('location' in patch) db.location = patch.location;
                   if ('isPublic' in patch) db.is_public = patch.isPublic;
                   if ('allowAdhoc' in patch) db.allow_adhoc = patch.allowAdhoc;
+                  if ('allowMemberInvites' in patch) db.allow_member_invites = patch.allowMemberInvites;
                   if ('horizon' in patch) db.horizon = patch.horizon;
                   if (Object.keys(db).length) live.saveGroup(activeGroupId, db);
                 }}
@@ -1839,13 +2000,21 @@ export default function App({ account = null }) {
         visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
         groups={Object.values(groupInfo)} isDemo={isDemo}
         onCreateGroup={() => { setGroupsOpen(false); setCreateGroupOpen(true); }}
+        onInviteMember={isDemo ? null : (gid) => { setInviteForGroup(gid); setGroupsOpen(false); }}
         onAddInstance={(gid) => { setAddInstanceFor(gid); setGroupsOpen(false); }}
         onDiscover={() => { setDiscoverOpen(true); setGroupsOpen(false); }} />
       <AddInstanceModal groupId={addInstanceFor} groupName={addInstanceFor ? groupInfo[addInstanceFor]?.name : null}
+        groupLocation={addInstanceFor ? groupInfo[addInstanceFor]?.location : ''}
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)} onCreate={live.createGroup} />
+      <InviteMemberModal open={!!inviteForGroup} onClose={() => setInviteForGroup(null)}
+        groupName={inviteForGroup ? groupInfo[inviteForGroup]?.name : ''} groupId={inviteForGroup} real={!isDemo} />
+      <EditInstanceModal session={editSession} onClose={() => setEditSession(null)}
+        onSave={(patch) => live.updateSession(editSession.id, patch)}
+        onDelete={() => live.deleteSession(editSession.id)}
+        onToggleCancel={(cancel) => live.updateSession(editSession.id, { cancelled_at: cancel ? new Date().toISOString() : null })} />
     </div>
   );
 }

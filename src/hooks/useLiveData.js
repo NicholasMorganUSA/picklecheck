@@ -36,6 +36,11 @@ function adaptSession(s, group, members, rsvps, myId, now) {
     id: s.id,
     groupId: s.group_id,
     groupName: group?.name || 'Group',
+    location: s.location || group?.location || null,
+    // True when this session's location overrides the group's standing location.
+    locationDiffers: !!s.location && s.location !== (group?.location || ''),
+    createdBy: s.created_by,
+    cancelled: !!s.cancelled_at,
     dateObj,
     courtCount: s.court_count,
     in: sumParty(buckets.in),
@@ -140,6 +145,16 @@ export function useLiveData(enabled) {
     return s;
   }, [load]);
 
+  const updateSession = useCallback(async (id, patch) => {
+    await data.updateSession(id, patch);
+    await load();
+  }, [load]);
+
+  const deleteSession = useCallback(async (id) => {
+    await data.deleteSession(id);
+    await load();
+  }, [load]);
+
   const createInvite = useCallback((groupId) => data.createInvite(groupId), []);
 
   const saveGroup = useCallback(async (gid, patch) => {
@@ -153,5 +168,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, createInvite, saveGroup };
+  return { groups, sessions, membersByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, saveGroup };
 }

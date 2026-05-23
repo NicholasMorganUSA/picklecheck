@@ -7,11 +7,17 @@ import { supabase } from './supabase.js';
 
 // ---- Groups ---------------------------------------------------------------
 
-// Groups the current user belongs to, with their role, oldest first.
+// Groups the current user belongs to, with THEIR role, oldest first.
+// Must filter by user_id: RLS lets a member read every member row of their
+// groups, so without this we'd get one row per member and pick the wrong role.
 export async function listMyGroups() {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return [];
   const { data, error } = await supabase
     .from('group_members')
     .select('role, created_at, group:groups(*)')
+    .eq('user_id', uid)
     .order('created_at', { ascending: true });
   if (error) throw error;
   return (data || [])
@@ -69,6 +75,13 @@ export async function redeemInvite(token) {
   return data; // group_id joined
 }
 
+// Public preview (no auth) of what a token leads to: { group_name, location, next_session, member_count } or null.
+export async function previewInvite(token) {
+  const { data, error } = await supabase.rpc('preview_invite', { p_token: token });
+  if (error) throw error;
+  return data;
+}
+
 export function inviteUrl(token) {
   return `${window.location.origin}/join/${token}`;
 }
@@ -87,13 +100,14 @@ export async function listSessions(groupIds) {
   return data || [];
 }
 
-export async function createSession({ groupId, startsAt, courtCount = 1, isAdhoc = true }) {
+export async function createSession({ groupId, startsAt, location = null, courtCount = 1, isAdhoc = true }) {
   const { data: auth } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('sessions')
     .insert({
       group_id: groupId,
       starts_at: startsAt,
+      location,
       court_count: courtCount,
       is_adhoc: isAdhoc,
       created_by: auth?.user?.id ?? null,
@@ -102,6 +116,22 @@ export async function createSession({ groupId, startsAt, courtCount = 1, isAdhoc
     .single();
   if (error) throw error;
   return data;
+}
+
+export async function updateSession(id, patch) {
+  const { data, error } = await supabase
+    .from('sessions')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteSession(id) {
+  const { error } = await supabase.from('sessions').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ---- RSVPs ----------------------------------------------------------------

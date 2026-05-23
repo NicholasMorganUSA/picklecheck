@@ -24,9 +24,9 @@ export function AuthProvider({ children }) {
     user: session?.user ?? null,
     session,
     loading,
-    signInWithGoogle: () => supabase.auth.signInWithOAuth({
+    signInWithGoogle: (redirectTo) => supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + '/' },
+      options: { redirectTo: redirectTo || (window.location.origin + '/') },
     }),
     signOut: () => supabase.auth.signOut(),
   };
