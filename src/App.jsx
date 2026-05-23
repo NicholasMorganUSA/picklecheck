@@ -425,13 +425,15 @@ const Avatar = ({ name, size = 28, isYou = false }) => (
   >{initials(name)}</div>
 );
 
+// Clickable wordmark → "/". In the demo this lands on the real app's login;
+// in the real app it's a "home" link.
 const BrandHeader = () => (
-  <div className="flex items-baseline justify-center" style={{ letterSpacing: '-0.02em' }}>
+  <a href="/" aria-label="PickleCheck home" className="flex items-baseline justify-center" style={{ letterSpacing: '-0.02em', textDecoration: 'none', cursor: 'pointer' }}>
     <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: '#c5e500' }}>Pickle</span>
     <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: 'var(--text-strong)' }}>Check</span>
     <span style={{ display: 'inline-block', width: '5px', height: '5px', background: '#c5e500', borderRadius: '50%', margin: '0 1.5px', transform: 'translateY(1px)', flexShrink: 0 }} />
     <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: 'var(--text-muted)' }}>in</span>
-  </div>
+  </a>
 );
 
 const IconButton = ({ children, onClick, label }) => (
@@ -2176,10 +2178,10 @@ export default function App({ account = null }) {
       <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onManage={handleManage}
         visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
         groups={Object.values(groupInfo)} isDemo={isDemo}
-        onCreateGroup={() => { setGroupsOpen(false); setCreateGroupOpen(true); }}
+        onCreateGroup={() => { setGroupsOpen(false); if (isDemo) setView('settings'); else setCreateGroupOpen(true); }}
         onInviteMember={isDemo ? null : (gid) => { setInviteForGroup(gid); setGroupsOpen(false); }}
-        onAddInstance={(gid) => { setAddInstanceFor(gid); setGroupsOpen(false); }}
-        onDiscover={() => { setDiscoverOpen(true); setGroupsOpen(false); }} />
+        onAddInstance={(gid) => { setGroupsOpen(false); if (isDemo) setView('settings'); else setAddInstanceFor(gid); }}
+        onDiscover={() => { setGroupsOpen(false); if (isDemo) setView('settings'); else setDiscoverOpen(true); }} />
       <AddInstanceModal groupId={addInstanceFor} groupName={addInstanceFor ? groupInfo[addInstanceFor]?.name : null}
         groupLocation={addInstanceFor ? groupInfo[addInstanceFor]?.location : ''}
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
