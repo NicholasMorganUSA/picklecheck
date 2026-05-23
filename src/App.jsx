@@ -85,35 +85,66 @@ const STATUS_PILL = {
 // MOCK DATA
 // ────────────────────────────────────────────────────────────────────
 const GROUP_INFO = {
-  lt:  { id: 'lt',  name: 'LT Breakfast Club', location: 'Life Time, Mason',    role: 'member', schedule: 'Mon–Fri · 6:00 AM',  members: 14 },
-  ees: { id: 'ees', name: 'EES Thursdays',     location: 'EES Indoor Courts',   role: 'member', schedule: 'Thu · 5:00 PM',      members: 9 },
-  cbt: { id: 'cbt', name: 'CBT Sunday',        location: 'CBT Church Gym',      role: 'admin',  schedule: 'Sun · 7:00 PM',      members: 11 },
+  dink:  { id: 'dink',  name: 'Dink Dynasty',     location: 'Lifetime Fitness, Mason', role: 'member', schedule: 'Mon–Fri · 6:00 AM',   members: 14 },
+  smash: { id: 'smash', name: 'Smash Bros',       location: 'Riverside Courts',        role: 'admin',  schedule: 'Tue & Thu · 5:00 PM', members: 38 },
+  slam:  { id: 'slam',  name: 'Saturday Slammers', location: 'Community Park',          role: 'member', schedule: 'Sat · 9:00 AM',       members: 16 },
 };
 
-const MOCK_NOW = new Date('2026-05-22T14:00:00');
+// Demo runs on the real current time, so its dates are never stale.
+const MOCK_NOW = new Date();
 const MOCK_USER = { name: 'Nicholas Morgan', email: 'nick@example.com', initials: 'NM' };
 
 const NAMES = [
   'Nicholas Morgan', 'Devin Smith', 'Aaron Tucker', 'Sara Klein', 'Jay Pickett',
   'Marcus Lee', 'Brad Tower', 'Mike Reed', 'Tom Brennan', 'Lisa Park',
   'Chris Day', 'Dan Hill', 'Pat Cole', 'Bren Adams', 'Megan Ross',
-  'Will Foster', 'Jen Kim', 'Ben Walsh', 'Kyle James', 'Pastor Mike',
+  'Will Foster', 'Jen Kim', 'Ben Walsh', 'Kyle James', 'Tara Quinn',
+  'Cole Banks', 'Nina Vasquez', 'Owen Pratt', 'Rae Donovan', 'Sam Okafor',
+  'Tess Lowe', 'Victor Hsu', 'Wendy Cho', 'Xavier Reyes', 'Yara Said',
+  'Zach Mercer', 'Ella Frost', 'Gabe Stern', 'Hana Ito', 'Ian Boyd',
+  'Jade Romero', 'Kurt Vogel', 'Lena Ortiz', 'Max Feld', 'Priya Nair',
 ];
 
-const MOCK_SESSIONS = [
-  { id: 's0', groupId: 'lt',  dateObj: new Date('2026-05-22T06:00'), in: 7, maybe: 0, out: 4, undecided: 3, myStatus: 'in',        past: true },
-  { id: 's1', groupId: 'ees', dateObj: new Date('2026-05-22T17:00'), in: 5, maybe: 1, out: 0, undecided: 2, myStatus: 'undecided', past: false },
-  { id: 's2', groupId: 'lt',  dateObj: new Date('2026-05-23T06:00'), in: 6, maybe: 1, out: 2, undecided: 5, myStatus: 'undecided', past: false },
-  { id: 's3', groupId: 'cbt', dateObj: new Date('2026-05-25T19:00'), in: 5, maybe: 1, out: 1, undecided: 4, myStatus: 'undecided', past: false },
-  { id: 's4', groupId: 'lt',  dateObj: new Date('2026-05-26T06:00'), in: 8, maybe: 0, out: 1, undecided: 5, myStatus: 'in',        past: false },
-  { id: 's5', groupId: 'lt',  dateObj: new Date('2026-05-27T06:00'), in: 4, maybe: 2, out: 4, undecided: 4, myStatus: 'maybe',     past: false },
-  { id: 's6', groupId: 'lt',  dateObj: new Date('2026-05-28T06:00'), in: 7, maybe: 0, out: 1, undecided: 6, myStatus: 'undecided', past: false },
-  { id: 's7', groupId: 'lt',  dateObj: new Date('2026-05-29T06:00'), in: 4, maybe: 1, out: 1, undecided: 8, myStatus: 'undecided', past: false },
-  { id: 's8', groupId: 'ees', dateObj: new Date('2026-05-29T17:00'), in: 2, maybe: 3, out: 0, undecided: 4, myStatus: 'undecided', past: false },
-  { id: 's9', groupId: 'lt',  dateObj: new Date('2026-05-30T06:00'), in: 12, maybe: 0, out: 1, undecided: 1, myStatus: 'in',       past: false },
-];
+// Cadence per demo group: days (0=Sun..6=Sat), time, and IN-count range.
+const DEMO_CADENCE = {
+  dink:  { days: [1, 2, 3, 4, 5], hour: 6,  min: 0, inMin: 3,  inMax: 12, maybeMax: 2 },
+  smash: { days: [2, 4],          hour: 17, min: 0, inMin: 24, inMax: 32, maybeMax: 4 },
+  slam:  { days: [6],             hour: 9,  min: 0, inMin: 6,  inMax: 14, maybeMax: 3 },
+};
 
-const DEFAULT_IDX = MOCK_SESSIONS.findIndex(s => !s.past);
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+function buildDemoSessions() {
+  // Opener: today, ~3h out, deliberately 3 IN / 0 MAYBE so the user can tap
+  // "I'm in" and watch it flip red → green (4 = a full court).
+  const opener = new Date(MOCK_NOW.getTime() + 3 * 3600 * 1000);
+  opener.setMinutes(0, 0, 0);
+  const sessions = [{ id: 'demo-opener', groupId: 'dink', dateObj: opener, in: 3, maybe: 0, out: 0, undecided: 6, myStatus: 'undecided', past: false }];
+
+  // Each group's recurring sessions for the next few weeks, with varied counts.
+  const cadence = [];
+  const day0 = new Date(MOCK_NOW); day0.setHours(0, 0, 0, 0);
+  for (let d = 0; d < 25; d++) {
+    const day = new Date(day0); day.setDate(day.getDate() + d);
+    const dow = day.getDay();
+    for (const gid of Object.keys(DEMO_CADENCE)) {
+      const c = DEMO_CADENCE[gid];
+      if (!c.days.includes(dow)) continue;
+      const dt = new Date(day); dt.setHours(c.hour, c.min, 0, 0);
+      if (dt <= opener) continue; // keep the opener as the soonest session
+      cadence.push({
+        id: `demo-${gid}-${d}`, groupId: gid, dateObj: dt,
+        in: randInt(c.inMin, c.inMax), maybe: randInt(0, c.maybeMax),
+        out: randInt(0, 2), undecided: randInt(1, 6), myStatus: 'undecided', past: false,
+      });
+    }
+  }
+  cadence.sort((a, b) => a.dateObj - b.dateObj);
+  return sessions.concat(cadence).slice(0, 16);
+}
+
+const MOCK_SESSIONS = buildDemoSessions();
+const DEFAULT_IDX = 0;
 
 // Deterministic roster by session
 function generateRoster(session) {
@@ -1567,7 +1598,7 @@ const ScheduleEditor = ({ schedule, horizon, onSave, onGenerate }) => {
 };
 
 const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions }) => {
-  const g = GROUP_INFO[groupId] || GROUP_INFO.cbt;
+  const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
   const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false } = s;
@@ -1848,12 +1879,8 @@ export default function App({ account = null }) {
         location: g.location,
         allowAdhoc: true,
         isPublic: false,
-        horizon: 4,
-        schedule: g.id === 'cbt'
-          ? [{ id: 1, label: 'Sunday · 7:00 PM' }]
-          : g.id === 'lt'
-            ? [{ id: 1, label: 'Monday · 6:00 AM' }, { id: 2, label: 'Tuesday · 6:00 AM' }, { id: 3, label: 'Wednesday · 6:00 AM' }, { id: 4, label: 'Thursday · 6:00 AM' }, { id: 5, label: 'Friday · 6:00 AM' }]
-            : [{ id: 1, label: 'Thursday · 5:00 PM' }],
+        horizon: 5,
+        schedule: [],
       };
     });
     return m;
