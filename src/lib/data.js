@@ -119,10 +119,12 @@ export async function getSchedule(groupId) {
 }
 
 export async function saveSchedule(groupId, { days_of_week, frequency, start_time, ends_on, location }) {
+  // Capture the admin's timezone so the nightly cron places sessions at the right wall-clock time.
+  const timezone = (typeof Intl !== 'undefined' && Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
   const { data, error } = await supabase
     .from('schedules')
     .upsert(
-      { group_id: groupId, days_of_week, frequency, start_time, ends_on: ends_on || null, location: location || null },
+      { group_id: groupId, days_of_week, frequency, start_time, ends_on: ends_on || null, location: location || null, timezone },
       { onConflict: 'group_id' },
     )
     .select()

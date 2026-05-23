@@ -8,7 +8,7 @@ const MS_HOUR = 3600 * 1000;
 // Turn one DB session + its rsvps/members into the shape the prototype UI wants:
 // { id, groupId, groupName, dateObj, courtCount, in, maybe, out, undecided,
 //   myStatus, myPartySize, past, roster:{in,maybe,out,undecided} }
-function adaptSession(s, group, members, rsvps, myId, now) {
+function adaptSession(s, group, members, rsvps, myId, now, schedule) {
   const buckets = { in: [], maybe: [], out: [] };
   let myStatus = 'undecided';
   let myPartySize = 1;
@@ -32,6 +32,15 @@ function adaptSession(s, group, members, rsvps, myId, now) {
   const label = (x) => (x.party > 1 ? `${x.name} +${x.party - 1}` : x.name);
   const dateObj = new Date(s.starts_at);
 
+  // True when this session's day-of-week or time is off the group's recurring cadence.
+  let timeDiffers = false;
+  if (schedule && schedule.days_of_week?.length && schedule.start_time) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const hhmm = `${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+    const dayMatch = schedule.days_of_week.map(Number).includes(dateObj.getDay());
+    timeDiffers = !dayMatch || hhmm !== String(schedule.start_time).slice(0, 5);
+  }
+
   return {
     id: s.id,
     groupId: s.group_id,
@@ -39,6 +48,7 @@ function adaptSession(s, group, members, rsvps, myId, now) {
     location: s.location || group?.location || null,
     // True when this session's location overrides the group's standing location.
     locationDiffers: !!s.location && s.location !== (group?.location || ''),
+    timeDiffers,
     createdBy: s.created_by,
     cancelled: !!s.cancelled_at,
     dateObj,
@@ -111,7 +121,7 @@ export function useLiveData(enabled) {
 
       const now = Date.now();
       const adapted = sess.map((s) =>
-        adaptSession(s, grps.find((g) => g.id === s.group_id), membersByGroup[s.group_id] || [], rsvpsBySession[s.id] || [], user.id, now),
+        adaptSession(s, grps.find((g) => g.id === s.group_id), membersByGroup[s.group_id] || [], rsvpsBySession[s.id] || [], user.id, now, schedulesByGroupNext[s.group_id]),
       );
 
       setGroups(grpsWithCounts);

@@ -456,6 +456,8 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
   // Real sessions carry groupName + roster + location; the mock prototype falls back to GROUP_INFO/generateRoster.
   const groupName = session.groupName || GROUP_INFO[session.groupId]?.name || 'Group';
   const location = session.location || GROUP_INFO[session.groupId]?.location || null;
+  // Off-cadence sessions glow neon so they stand out (different day/time than usual).
+  const strongCol = session.timeDiffers ? '#c5e500' : 'var(--text-strong)';
   const overall = getOverallStatus(confirmed);
   const o = COLOR[overall];
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -495,14 +497,14 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
                 <ChevronLeft size={22} />
               </button>
             ) : <span className="w-7 flex-shrink-0" />}
-          <div className="flex-1 text-center" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95" }}>
+          <div className="flex-1 text-center" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.05, fontVariationSettings: "'wdth' 95", textShadow: session.timeDiffers ? '0 0 12px rgba(197,229,0,0.55)' : 'none' }}>
             {(context === 'TODAY' || context === 'TOMORROW') ? (
               <>
                 <span style={{ color: '#c5e500' }}>{context}</span>
-                <span style={{ color: 'var(--text-strong)' }}> · {fmtTime(session.dateObj)}</span>
+                <span style={{ color: strongCol }}> · {fmtTime(session.dateObj)}</span>
               </>
             ) : (
-              <span style={{ color: 'var(--text-strong)' }}>
+              <span style={{ color: strongCol }}>
                 {DAYS_SHORT[session.dateObj.getDay()].toUpperCase()} · {MONTHS[session.dateObj.getMonth()].toUpperCase()} {session.dateObj.getDate()} · {fmtTime(session.dateObj)}
               </span>
             )}
