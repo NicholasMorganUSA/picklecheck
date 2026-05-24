@@ -2454,6 +2454,31 @@ export default function App({ account = null }) {
     didDeepLink.current = true;
   }, [isDemo, live.sessions, filtered]);
 
+  // Notifications are on by default — no manual opt-in. If permission is already
+  // granted, subscribe this device silently on load. If it's never been asked,
+  // fire the OS prompt on the user's first tap (the one "Allow" tap is the only
+  // thing Apple/Google won't let us skip). Denied/iOS-not-installed: can't auto-fix.
+  const didAutoPush = useRef(false);
+  useEffect(() => {
+    if (isDemo || !account || didAutoPush.current) return;
+    didAutoPush.current = true;
+    let cleanup;
+    (async () => {
+      try {
+        const state = await getPushState();
+        if (state !== 'off') return; // 'on' = done; needs-install/denied/unsupported = can't
+        if (Notification.permission === 'granted') {
+          enablePush().catch(() => {});
+        } else if (Notification.permission === 'default') {
+          const onFirstTap = () => { enablePush().catch(() => {}); };
+          window.addEventListener('pointerdown', onFirstTap, { once: true });
+          cleanup = () => window.removeEventListener('pointerdown', onFirstTap);
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => cleanup?.();
+  }, [isDemo, account]);
+
   return (
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
       style={{

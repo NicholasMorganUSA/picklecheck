@@ -41,3 +41,6 @@ pnpm-debug.log*
 
 # Claude Code (local/personal settings — keep out of the repo)
 .claude/settings.local.json
+
+# Local admin tool that talks to the Supabase Management API
+scripts/supabase-sql.mjs
