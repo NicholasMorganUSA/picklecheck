@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/auth.jsx';
 import { supabase } from '../lib/supabase.js';
 import * as data from '../lib/data.js';
+import { notifySessionChange } from '../lib/notify.js';
 
 const MS_HOUR = 3600 * 1000;
 
@@ -169,6 +170,13 @@ export function useLiveData(enabled) {
 
   const updateSession = useCallback(async (id, patch) => {
     await data.updateSession(id, patch);
+    // Fire a push to committed players (best-effort; never blocks the UI).
+    try {
+      if (patch.cancelled_at) await notifySessionChange(id, 'cancel');
+      else if ('location' in patch || 'starts_at' in patch) await notifySessionChange(id, 'change');
+    } catch (e) {
+      console.warn('[notify] change alert failed:', e);
+    }
     await load();
   }, [load]);
 
