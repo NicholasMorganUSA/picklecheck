@@ -99,6 +99,7 @@ async function dispatchStep(db, session, offMin, groupName, tz) {
     body: `${formatWhen(session.starts_at, tz)} · In or Out?`,
     tag: `reminder-${session.id}`,
     url: `/?session=${session.id}`,
+    sessionId: session.id,
     actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }],
   };
 

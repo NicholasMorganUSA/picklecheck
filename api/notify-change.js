@@ -74,6 +74,7 @@ export default async function handler(req, res) {
       watch:  { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
       change: { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Can you make it?`, tag: `change-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
     }[kind];
+    payload.sessionId = sessionId; // lets the SW set the RSVP directly from an action button
 
     const subsByUser = await subscriptionsForUsers(db, audience);
     let sent = 0;
