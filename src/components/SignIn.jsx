@@ -53,6 +53,13 @@ export default function SignIn() {
 
         <a
           href="/demo"
+          onClick={(e) => {
+            // Replace (not push) so a user who later signs in has no back-button
+            // path into the demo — only typing /demo fresh reaches it.
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+            e.preventDefault();
+            window.location.replace('/demo');
+          }}
           style={{
             marginTop: '18px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.5)',

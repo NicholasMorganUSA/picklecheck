@@ -427,10 +427,20 @@ const Avatar = ({ name, size = 28, isYou = false }) => (
   >{initials(name)}</div>
 );
 
+// Leave the SPA via a history REPLACE (not push) so the page we're leaving —
+// e.g. /demo — can never be reached again with the back/forward button. This is
+// what guarantees a logged-in user has no pathway back into the demo (the only
+// way in is typing /demo fresh). Honor modifier clicks so "open in new tab" works.
+function hardReplace(e, to) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+  e.preventDefault();
+  window.location.replace(to);
+}
+
 // Clickable wordmark → "/". In the demo this lands on the real app's login;
-// in the real app it's a "home" link.
+// in the real app it's a "home" link. Uses replace so the demo isn't left behind.
 const BrandHeader = () => (
-  <a href="/" aria-label="PickleCheck home" className="flex items-baseline justify-center" style={{ letterSpacing: '-0.02em', textDecoration: 'none', cursor: 'pointer' }}>
+  <a href="/" onClick={(e) => hardReplace(e, '/')} aria-label="PickleCheck home" className="flex items-baseline justify-center" style={{ letterSpacing: '-0.02em', textDecoration: 'none', cursor: 'pointer' }}>
     <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: '#c5e500' }}>Pickle</span>
     <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: '18px', fontWeight: 800, lineHeight: 1, color: 'var(--text-strong)' }}>Check</span>
     <span style={{ display: 'inline-block', width: '5px', height: '5px', background: '#c5e500', borderRadius: '50%', margin: '0 1.5px', transform: 'translateY(1px)', flexShrink: 0 }} />
@@ -1415,7 +1425,7 @@ const DemoSettings = ({ onBack }) => (
       <div className="text-[13px] mb-6 leading-snug" style={{ color: 'var(--text-muted)' }}>
         A sandbox with sample data — nothing here is saved. Create a free account to start your own groups, invite players, and check in for real.
       </div>
-      <a href="/" className="inline-block px-7 py-3 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>
+      <a href="/" onClick={(e) => hardReplace(e, '/')} className="inline-block px-7 py-3 rounded-full text-sm font-bold" style={{ background: '#c5e500', color: '#1a1f00' }}>
         Sign up / Log in
       </a>
     </div>
