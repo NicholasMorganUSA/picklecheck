@@ -85,6 +85,7 @@ async function saveSubscription(sub) {
         p256dh: json.keys?.p256dh,
         auth: json.keys?.auth,
         user_agent: navigator.userAgent,
+        standalone: isStandalone(),   // true = subscribed from the installed PWA
         last_seen_at: new Date().toISOString(),
       },
       { onConflict: 'endpoint' },

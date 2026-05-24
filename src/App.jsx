@@ -1,8 +1,8 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
 import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell, AlertTriangle } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
-import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus } from "./lib/data.js";
-import { getPushState, enablePush, disablePush } from "./lib/push.js";
+import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus, updateMemberRole, listOutRanges, addOutRange, deleteOutRange } from "./lib/data.js";
+import { getPushState, enablePush } from "./lib/push.js";
 import { sendTestPush } from "./lib/notify.js";
 
 // ────────────────────────────────────────────────────────────────────
@@ -1604,7 +1604,6 @@ const PushControl = () => {
   };
 
   const turnOn = () => run(enablePush, 'Notifications are on for this device.');
-  const turnOff = () => run(disablePush, null);
   const test = () => run(async () => {
     const r = await sendTestPush();
     if (!r || r.sent === 0) throw new Error('No registered device received it — try turning notifications off and on.');
@@ -1635,11 +1634,11 @@ const PushControl = () => {
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#c5e500', boxShadow: '0 0 8px #c5e500' }} />
         <div className="min-w-0">
-          <div className="text-sm font-bold">Push on this device</div>
-          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>On — check-in nudges & alerts</div>
+          <div className="text-sm font-bold">Notifications on</div>
+          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>You’ll get reminders, cancellations & weather watches</div>
         </div>
       </div>
-      <div className="flex gap-2 flex-shrink-0">{pill('Test', test)}{pill('Turn off', turnOff)}</div>
+      <div className="flex-shrink-0">{pill('Test', test)}</div>
     </div>
   );
   else inner = (
@@ -1666,7 +1665,7 @@ const PushControl = () => {
 };
 
 const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) => {
-  const { name, email, remind24, remind3, lockIn, summary, outRanges } = settings;
+  const { name, email, remind24, remind3, lockIn, summary } = settings;
   // In the real app, profile name/email come from the signed-in account.
   const displayName = account?.name ?? name;
   const displayEmail = account?.email ?? email;
@@ -1675,15 +1674,22 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) =>
   const [newEnd, setNewEnd] = useState('');
   const [newReason, setNewReason] = useState('');
   const [themeOpen, setThemeOpen] = useState(false);
-  const addRange = () => {
+  // Auto-out ranges are stored per-user in the DB (user_out_ranges).
+  const [outRanges, setOutRanges] = useState([]);
+  useEffect(() => { if (account) listOutRanges().then(setOutRanges).catch(() => {}); }, [account]);
+  const addRange = async () => {
     if (!newStart || !newEnd) return;
-    update({ outRanges: [...outRanges, { id: Date.now(), start: newStart, end: newEnd, reason: newReason || 'Out' }] });
+    try { await addOutRange({ start: newStart, end: newEnd, reason: newReason || null }); setOutRanges(await listOutRanges()); }
+    catch (e) { console.warn('[out-range] add failed:', e); }
     setNewStart(''); setNewEnd(''); setNewReason(''); setAdding(false);
   };
-  const removeRange = (id) => update({ outRanges: outRanges.filter(r => r.id !== id) });
+  const removeRange = async (id) => {
+    try { await deleteOutRange(id); setOutRanges(await listOutRanges()); }
+    catch (e) { console.warn('[out-range] remove failed:', e); }
+  };
   const fmtRange = (r) => {
     const fmt = (d) => { const dt = new Date(d + 'T12:00'); return `${MONTHS[dt.getMonth()]} ${dt.getDate()}`; };
-    return `${fmt(r.start)} – ${fmt(r.end)}`;
+    return `${fmt(r.start_date)} – ${fmt(r.end_date)}`;
   };
   return (
     <div>
@@ -1726,7 +1732,7 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) =>
           <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="text-sm">{fmtRange(r)}</div>
-              <div className="text-[11px] text-zinc-500">{r.reason}</div>
+              <div className="text-[11px] text-zinc-500">{r.reason || 'Out'}</div>
             </div>
             <button onClick={() => removeRange(r.id)} className="text-[11px] text-zinc-500 hover:text-rose-400">Remove</button>
           </div>
@@ -1965,14 +1971,25 @@ const NotificationLadderEditor = ({ groupId, startTime }) => {
 };
 
 // Admin view: which members have push enabled (no endpoints exposed).
-const AdminReachPanel = ({ groupId, meName }) => {
+// Admin roster: each member with notifications/install status + role delegation.
+const Pill = ({ children, on }) => (
+  <span className="text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-full"
+    style={on
+      ? { background: 'rgba(197,229,0,0.15)', color: '#c5e500' }
+      : { background: 'var(--bg-subtle)', color: 'var(--text-faint)' }}>
+    {children}
+  </span>
+);
+
+const GroupRoster = ({ groupId, meName }) => {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState('');
+  const [busyId, setBusyId] = useState(null);
+
+  const load = () => getGroupPushStatus(groupId).then(setRows).catch((e) => setErr(e.message || 'Could not load'));
   useEffect(() => {
     let alive = true;
-    getGroupPushStatus(groupId)
-      .then((r) => { if (alive) setRows(r); })
-      .catch((e) => { if (alive) setErr(e.message || 'Could not load'); });
+    getGroupPushStatus(groupId).then((r) => { if (alive) setRows(r); }).catch((e) => { if (alive) setErr(e.message || 'Could not load'); });
     return () => { alive = false; };
   }, [groupId]);
 
@@ -1980,24 +1997,48 @@ const AdminReachPanel = ({ groupId, meName }) => {
   if (!rows) return <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>Loading…</div>;
 
   const onCount = rows.filter((r) => r.devices > 0).length;
+  const adminCount = rows.filter((r) => r.role === 'admin').length;
+  const setRole = async (userId, role) => {
+    setBusyId(userId); setErr('');
+    try { await updateMemberRole(groupId, userId, role); await load(); }
+    catch (e) { setErr(e.message || 'Could not update role'); }
+    finally { setBusyId(null); }
+  };
+
   return (
     <>
-      <div className="px-4 pt-3 pb-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-        {onCount} of {rows.length} {rows.length === 1 ? 'member has' : 'members have'} notifications on.
+      <div className="px-4 pt-3 pb-1 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+        {onCount} of {rows.length} have notifications on.
       </div>
       {rows.map((r) => {
-        const on = r.devices > 0;
         const nm = r.full_name || 'Member';
+        const you = nm === meName;
+        const isAdmin = r.role === 'admin';
         return (
-          <div key={r.user_id} className="px-4 py-2.5 flex items-center justify-between">
+          <div key={r.user_id} className="px-4 py-2.5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <Avatar name={nm} size={28} isYou={nm === meName} />
-              <span className="text-sm truncate">{nm === meName ? `${nm} (you)` : nm}</span>
+              <Avatar name={nm} size={32} isYou={you} />
+              <div className="min-w-0">
+                <div className="text-sm truncate">{you ? `${nm} (you)` : nm}{isAdmin && <span className="ml-1.5 text-[9px] font-bold tracking-wider" style={{ color: '#c5e500' }}>ADMIN</span>}</div>
+                <div className="flex items-center gap-1 mt-1">
+                  <Pill on={r.devices > 0}>{r.devices > 0 ? 'NOTIFS ON' : 'NO NOTIFS'}</Pill>
+                  {r.installed > 0 && <Pill on>APP</Pill>}
+                </div>
+              </div>
             </div>
-            <span className="flex items-center gap-1.5 text-[11px] font-bold flex-shrink-0" style={{ color: on ? '#c5e500' : 'var(--text-faint)' }}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: on ? '#c5e500' : 'var(--text-faint)', boxShadow: on ? '0 0 6px #c5e500' : 'none' }} />
-              {on ? 'On' : 'Off'}
-            </span>
+            <div className="flex-shrink-0">
+              {isAdmin ? (
+                <button disabled={busyId === r.user_id || adminCount <= 1} onClick={() => setRole(r.user_id, 'member')}
+                  className="text-[11px] font-semibold disabled:opacity-30" style={{ color: 'var(--text-tertiary)' }}>
+                  Remove admin
+                </button>
+              ) : (
+                <button disabled={busyId === r.user_id} onClick={() => setRole(r.user_id, 'admin')}
+                  className="text-[11px] font-semibold disabled:opacity-40" style={{ color: '#c5e500' }}>
+                  Make admin
+                </button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -2059,25 +2100,24 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           <NotificationLadderEditor groupId={groupId} startTime={schedule?.start_time} />
         )}
       </SettingsSection>
-      {!isDemo && (
-        <SettingsSection title="Notification reach">
-          <AdminReachPanel groupId={groupId} meName={meName} />
-        </SettingsSection>
-      )}
       <SettingsSection title={`Members · ${memberCount}`}>
-        {memberList.map((m, i) => {
-          const mname = m.full_name || 'Member';
-          const isYou = mname === meName;
-          return (
-            <div key={m.id ?? i} className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Avatar name={mname} size={32} isYou={isYou} />
-                <div className="text-sm">{isYou ? `${mname} (you)` : mname}</div>
+        {isDemo ? (
+          memberList.map((m, i) => {
+            const mname = m.full_name || 'Member';
+            const isYou = mname === meName;
+            return (
+              <div key={m.id ?? i} className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Avatar name={mname} size={32} isYou={isYou} />
+                  <div className="text-sm">{isYou ? `${mname} (you)` : mname}</div>
+                </div>
+                <div className="text-[10px] tracking-wider font-bold text-zinc-500">{(m.role || 'member').toUpperCase()}</div>
               </div>
-              <div className="text-[10px] tracking-wider font-bold text-zinc-500">{(m.role || 'member').toUpperCase()}</div>
-            </div>
-          );
-        })}
+            );
+          })
+        ) : (
+          <GroupRoster groupId={groupId} meName={meName} />
+        )}
         <button onClick={() => setInviteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold" style={{ color: '#c5e500' }}>
           <Plus size={13} />Invite member
         </button>

@@ -289,11 +289,48 @@ export async function saveNotificationSettings(groupId, patch) {
   return data;
 }
 
-// Admin-only: each member + whether they have push enabled (device count).
+// Admin-only: each member with role + push/install status (device + installed counts).
 export async function getGroupPushStatus(groupId) {
   const { data, error } = await supabase.rpc('group_push_status', { p_group_id: groupId });
   if (error) throw error;
   return data || [];
+}
+
+// Admin-only (RLS: group_members_update_admin). Promote/demote a member.
+export async function updateMemberRole(groupId, userId, role) {
+  const { error } = await supabase
+    .from('group_members').update({ role })
+    .eq('group_id', groupId).eq('user_id', userId);
+  if (error) throw error;
+}
+
+// ---- Auto-out ranges (owner-scoped) ---------------------------------------
+
+export async function listOutRanges() {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from('user_out_ranges').select('*').eq('user_id', uid).order('start_date');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addOutRange({ start, end, reason }) {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) throw new Error('Not signed in');
+  const { data, error } = await supabase
+    .from('user_out_ranges')
+    .insert({ user_id: uid, start_date: start, end_date: end, reason: reason || null })
+    .select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteOutRange(id) {
+  const { error } = await supabase.from('user_out_ranges').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // Subscribe to live RSVP changes for a session. Returns an unsubscribe fn.
