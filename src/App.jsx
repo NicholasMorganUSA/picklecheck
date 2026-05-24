@@ -1856,7 +1856,7 @@ const AdminReachPanel = ({ groupId, meName }) => {
   );
 };
 
-const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions }) => {
+const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
@@ -1867,6 +1867,8 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   ];
   const memberCount = members ? members.length : g.members;
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [confirmDelGroup, setConfirmDelGroup] = useState(false);
+  const [delBusy, setDelBusy] = useState(false);
   return (
     <div>
       <div className="flex items-center gap-3 pb-4">
@@ -1931,7 +1933,20 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           <Plus size={13} />Invite member
         </button>
       </SettingsSection>
-      <button className="w-full py-3 rounded-2xl text-sm font-semibold mb-2" style={{ background: 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.2)' }}>Delete group</button>
+      {!isDemo && (
+        <button
+          disabled={delBusy}
+          onClick={async () => {
+            if (!confirmDelGroup) { setConfirmDelGroup(true); return; }
+            setDelBusy(true);
+            try { await onDelete?.(); }
+            catch (e) { setDelBusy(false); alert(e.message || 'Could not delete group'); }
+          }}
+          className="w-full py-3 rounded-2xl text-sm font-semibold mb-2 disabled:opacity-60"
+          style={{ background: confirmDelGroup ? 'rgba(244,63,94,0.22)' : 'rgba(244,63,94,0.1)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.25)' }}>
+          {delBusy ? 'Deleting…' : confirmDelGroup ? 'Tap again to permanently delete this group' : 'Delete group'}
+        </button>
+      )}
       <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} groupId={groupId} real={!isDemo} />
     </div>
   );
@@ -2445,6 +2460,7 @@ export default function App({ account = null }) {
                 schedule={live.schedulesByGroup?.[activeGroupId] || null}
                 onSaveSchedule={(r) => live.saveSchedule(activeGroupId, r)}
                 onGenerateSessions={async (r) => { const s = await live.saveSchedule(activeGroupId, r); return live.generateSessions(activeGroupId, s, ag.horizon ?? 5); }}
+                onDelete={async () => { await live.deleteGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
                 update={(patch) => {
                   const db = {};
                   if ('name' in patch) db.name = patch.name;

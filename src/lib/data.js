@@ -68,6 +68,13 @@ export async function updateGroup(groupId, patch) {
   return data;
 }
 
+// Admin-only (RLS: groups_delete_admin). Cascades to members, schedules,
+// sessions, rsvps, invites, and notification settings.
+export async function deleteGroup(groupId) {
+  const { error } = await supabase.from('groups').delete().eq('id', groupId);
+  if (error) throw error;
+}
+
 // ---- Members --------------------------------------------------------------
 
 export async function listMembers(groupId) {
