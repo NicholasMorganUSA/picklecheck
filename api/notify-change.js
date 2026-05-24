@@ -1,8 +1,8 @@
 // Event alert — called by the client right after a session action:
 //   • new    : session just created         → EVERYONE in the group (member auth)
+//   • change : time/location changed         → EVERYONE (an OUT player may flip)
 //   • cancel : session called off           → everyone NOT out (admin auth)
 //   • watch  : "weather watch" heads-up      → everyone NOT out (admin auth)
-//   • change : time/location changed         → committed players IN+MAYBE (admin auth)
 // The reason text is read from the row server-side.
 import {
   admin, userIdFromRequest, subscriptionsForUsers, sendToSubscriptions, formatWhen, readJsonBody,
@@ -50,15 +50,10 @@ export default async function handler(req, res) {
     const gname = grp?.name || 'PickleCheck';
 
     // Audience:
-    //   new → everyone in the group
-    //   change → committed (IN + MAYBE)
+    //   new / change → everyone in the group (a change can win back an OUT player)
     //   cancel/watch → everyone who hasn't opted out (IN + MAYBE + UNDECIDED/no-row)
     let audience;
-    if (kind === 'change') {
-      const { data: rsvps } = await db
-        .from('rsvps').select('user_id, status').eq('session_id', sessionId).in('status', ['in', 'maybe']);
-      audience = (rsvps || []).map((r) => r.user_id);
-    } else if (kind === 'new') {
+    if (kind === 'new' || kind === 'change') {
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
       audience = (members || []).map((m) => m.user_id);
     } else {
@@ -77,7 +72,7 @@ export default async function handler(req, res) {
       new:    { title: `New session — ${gname}`, body: `${when}${loc} · In or Out?`, tag: `new-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
       cancel: { title: `Cancelled — ${gname}`, body: `${when} is cancelled${cancelReason}.`, tag: `cancel-${sessionId}`, url: `/?session=${sessionId}` },
       watch:  { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
-      change: { title: `Updated — ${gname}`, body: `${when}${loc} — details changed.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
+      change: { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Can you make it?`, tag: `change-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
     }[kind];
 
     const subsByUser = await subscriptionsForUsers(db, audience);
