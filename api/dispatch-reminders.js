@@ -96,11 +96,10 @@ async function dispatchStep(db, session, offMin, groupName, tz) {
   const subsByUser = await subscriptionsForUsers(db, audience);
   const payload = {
     title: `Check in — ${groupName || 'PickleCheck'}`,
-    body: `${formatWhen(session.starts_at, tz)} · In or Out?`,
+    body: `${formatWhen(session.starts_at, tz)} · Are you in? Tap to RSVP.`,
     tag: `reminder-${session.id}`,
     url: `/?session=${session.id}`,
     sessionId: session.id,
-    actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }],
   };
 
   let sent = 0;
