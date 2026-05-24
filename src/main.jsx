@@ -5,8 +5,15 @@ import App from './App.jsx';
 import AppGate from './AppGate.jsx';
 import Join from './components/Join.jsx';
 import IOSInstallPrompt from './components/IOSInstallPrompt.jsx';
+import { registerServiceWorker } from './lib/push.js';
 import { AuthProvider } from './lib/auth.jsx';
 import './index.css';
+
+// Register the push service worker once the page has loaded (idempotent; it has
+// no fetch handler so it can't affect caching/offline behaviour).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { registerServiceWorker(); });
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
