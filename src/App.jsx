@@ -1,7 +1,9 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
-import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin } from "lucide-react";
+import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
 import { inviteUrl, createInvite, searchPublicGroups } from "./lib/data.js";
+import { getPushState, enablePush, disablePush } from "./lib/push.js";
+import { sendTestPush } from "./lib/notify.js";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -1420,6 +1422,90 @@ const DemoSettings = ({ onBack }) => (
   </div>
 );
 
+// Device-level push enable/disable + a "send test" check. The per-type toggles
+// below it are personal preferences; THIS is the actual on/off for this device.
+const PushControl = () => {
+  const [state, setState] = useState('loading'); // loading|on|off|needs-install|denied|unsupported
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null); // { ok, text } | null
+
+  useEffect(() => { getPushState().then(setState).catch(() => setState('off')); }, []);
+
+  const run = async (fn, okText) => {
+    setBusy(true); setMsg(null);
+    try {
+      const next = await fn();
+      if (typeof next === 'string') setState(next);
+      if (okText) setMsg({ ok: true, text: okText });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const turnOn = () => run(enablePush, 'Notifications are on for this device.');
+  const turnOff = () => run(disablePush, null);
+  const test = () => run(async () => {
+    const r = await sendTestPush();
+    if (!r || r.sent === 0) throw new Error('No registered device received it — try turning notifications off and on.');
+    return undefined;
+  }, 'Test sent — check your notifications.');
+
+  const pill = (label, onClick, primary) => (
+    <button onClick={onClick} disabled={busy}
+      className="px-3 py-1.5 rounded-full text-[12px] font-bold disabled:opacity-40"
+      style={primary
+        ? { background: '#c5e500', color: '#1a1f00' }
+        : { background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-medium)' }}>
+      {label}
+    </button>
+  );
+
+  const note = (text) => (
+    <div className="px-4 py-3 text-[12px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>{text}</div>
+  );
+
+  let inner;
+  if (state === 'loading') inner = <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>Checking…</div>;
+  else if (state === 'unsupported') inner = note("This browser doesn’t support notifications.");
+  else if (state === 'needs-install') inner = note("To get notifications on iPhone, first add PickleCheck to your Home Screen (Share → “Add to Home Screen”), open it from there, then come back here to turn them on.");
+  else if (state === 'denied') inner = note("Notifications are blocked. Turn them back on in your browser/phone settings, then reload.");
+  else if (state === 'on') inner = (
+    <div className="px-4 py-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#c5e500', boxShadow: '0 0 8px #c5e500' }} />
+        <div className="min-w-0">
+          <div className="text-sm font-bold">Push on this device</div>
+          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>On — check-in nudges & alerts</div>
+        </div>
+      </div>
+      <div className="flex gap-2 flex-shrink-0">{pill('Test', test)}{pill('Turn off', turnOff)}</div>
+    </div>
+  );
+  else inner = (
+    <div className="px-4 py-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <Bell size={16} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+        <div className="min-w-0">
+          <div className="text-sm font-bold">Push on this device</div>
+          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Get check-in nudges & cancellations</div>
+        </div>
+      </div>
+      <div className="flex-shrink-0">{pill('Turn on', turnOn, true)}</div>
+    </div>
+  );
+
+  return (
+    <>
+      {inner}
+      {msg && (
+        <div className="px-4 pb-3 text-[12px]" style={{ color: msg.ok ? '#c5e500' : '#fb7185' }}>{msg.text}</div>
+      )}
+    </>
+  );
+};
+
 const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) => {
   const { name, email, remind24, remind3, lockIn, summary, outRanges } = settings;
   // In the real app, profile name/email come from the signed-in account.
@@ -1467,6 +1553,7 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) =>
         )}
       </SettingsSection>
       <SettingsSection title="Notifications">
+        <PushControl />
         <ToggleRow label="Night-before reminder" sub="24 hours before session" on={remind24} onChange={(v) => update({ remind24: v })} />
         <ToggleRow label="3-hour reminder" sub="For unconfirmed sessions" on={remind3} onChange={(v) => update({ remind3: v })} />
         <ToggleRow label="Lock-in nudge" sub="If you're MAYBE the night before" on={lockIn} onChange={(v) => update({ lockIn: v })} />
@@ -2045,6 +2132,32 @@ export default function App({ account = null }) {
       didInitIdx.current = true;
     }
   }, [isDemo, live.sessions]);
+
+  // Deep link from a push tap: /?session=<id>[&rsvp=in|out|maybe]. Jump to that
+  // session, apply the tapped RSVP, then strip the params so refresh is clean.
+  const didDeepLink = useRef(false);
+  useEffect(() => {
+    if (isDemo || didDeepLink.current || !live.sessions.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get('session');
+    const rsvp = params.get('rsvp');
+    if (sid) {
+      const idx = filtered.findIndex((s) => s.id === sid);
+      if (idx >= 0) {
+        setView('today');
+        setCurrentIdx(idx);
+        loadSession(filtered[idx]);
+        if (rsvp && ['in', 'out', 'maybe'].includes(rsvp)) {
+          live.setRsvp(sid, rsvp, 1).catch((e) => console.warn('[deeplink] rsvp failed', e));
+        }
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('session');
+      url.searchParams.delete('rsvp');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }
+    didDeepLink.current = true;
+  }, [isDemo, live.sessions, filtered]);
 
   return (
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
