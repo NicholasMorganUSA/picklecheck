@@ -2,7 +2,7 @@ import { useState, useId, useMemo, useEffect, useRef } from "react";
 import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell, AlertTriangle } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
 import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus, updateMemberRole, listOutRanges, addOutRange, deleteOutRange } from "./lib/data.js";
-import { getPushState, enablePush } from "./lib/push.js";
+import { getPushState, enablePush, refreshSubscription } from "./lib/push.js";
 import { sendTestPush } from "./lib/notify.js";
 
 // ────────────────────────────────────────────────────────────────────
@@ -2540,6 +2540,9 @@ export default function App({ account = null }) {
     let cleanup;
     (async () => {
       try {
+        // Re-save the subscription each open so install-status (standalone) and
+        // last-seen stay current — e.g. once they finally install the PWA.
+        refreshSubscription();
         const state = await getPushState();
         if (state !== 'off') return; // 'on' = done; needs-install/denied/unsupported = can't
         if (Notification.permission === 'granted') {

@@ -127,6 +127,23 @@ export function useLiveData(enabled) {
         adaptSession(s, grps.find((g) => g.id === s.group_id), membersByGroup[s.group_id] || [], rsvpsBySession[s.id] || [], user.id, now, schedulesByGroupNext[s.group_id]),
       );
 
+      // Auto-out: for upcoming sessions the user hasn't answered (undecided) that
+      // fall inside one of their out-ranges, set them OUT. Persists so reminders
+      // skip them; reflected optimistically here. Only touches undecided sessions,
+      // so an explicit IN/MAYBE/OUT is never overridden, and it self-terminates.
+      const ranges = await data.listOutRanges().catch(() => []);
+      if (ranges.length) {
+        const inRange = (d) => ranges.some((r) => {
+          const day = new Date(d); day.setHours(12, 0, 0, 0);
+          return day >= new Date(`${r.start_date}T00:00:00`) && day <= new Date(`${r.end_date}T23:59:59`);
+        });
+        const autoOut = adapted.filter((s) => !s.past && !s.cancelled && s.myStatus === 'undecided' && inRange(s.dateObj));
+        if (autoOut.length) {
+          for (const s of autoOut) { s.myStatus = 'out'; s.undecided = Math.max(0, s.undecided - 1); s.out += 1; }
+          Promise.all(autoOut.map((s) => data.setMyRsvp({ sessionId: s.id, status: 'out', partySize: 1 }))).catch(() => {});
+        }
+      }
+
       setGroups(grpsWithCounts);
       setSessions(adapted);
       setMembersByGroup(membersByGroup);
