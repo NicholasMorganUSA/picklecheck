@@ -69,12 +69,12 @@ export default async function handler(req, res) {
     const watchReason = session.watch_reason || 'Weather';
     const loc = session.location ? ` · ${session.location}` : '';
     const payload = {
-      new:    { title: `New session — ${gname}`, body: `${when}${loc} · New session — tap to RSVP.`, tag: `new-${sessionId}`, url: `/?session=${sessionId}` },
+      new:    { title: `New session — ${gname}`, body: `${when}${loc} · In or Out?`, tag: `new-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
       cancel: { title: `Cancelled — ${gname}`, body: `${when} is cancelled${cancelReason}.`, tag: `cancel-${sessionId}`, url: `/?session=${sessionId}` },
       watch:  { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
-      change: { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Tap to update your RSVP.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
+      change: { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Can you make it?`, tag: `change-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
     }[kind];
-    payload.sessionId = sessionId;
+    payload.sessionId = sessionId; // lets the SW set the RSVP directly from an action button
 
     const subsByUser = await subscriptionsForUsers(db, audience);
     let sent = 0;
