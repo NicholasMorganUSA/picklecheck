@@ -87,10 +87,20 @@ async function dispatchStep(db, session, offMin, groupName, tz) {
   for (const r of rsvps || []) statusByUser[r.user_id] = r.status;
 
   // Not-yet-committed: undecided, maybe, or no RSVP row at all.
-  const audience = memberIds.filter((uid) => {
+  let audience = memberIds.filter((uid) => {
     const st = statusByUser[uid];
     return !st || st === 'undecided' || st === 'maybe';
   });
+  if (!audience.length) return 0;
+
+  // Respect personal auto-out ranges (vacation): skip anyone whose range covers
+  // this session's date — even if they never opened the app to apply it.
+  const sessionDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(session.starts_at));
+  const { data: oor } = await db
+    .from('user_out_ranges').select('user_id')
+    .in('user_id', audience).lte('start_date', sessionDate).gte('end_date', sessionDate);
+  const onLeave = new Set((oor || []).map((r) => r.user_id));
+  audience = audience.filter((uid) => !onLeave.has(uid));
   if (!audience.length) return 0;
 
   const subsByUser = await subscriptionsForUsers(db, audience);
