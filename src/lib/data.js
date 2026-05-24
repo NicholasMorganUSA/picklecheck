@@ -259,6 +259,36 @@ export async function setMyRsvp({ sessionId, status, partySize = 1 }) {
   return data;
 }
 
+// ---- Notification settings (per group) ------------------------------------
+
+// The group's reminder ladder + change-alert toggles (admin-managed). Null = unset.
+export async function getNotificationSettings(groupId) {
+  const { data, error } = await supabase
+    .from('group_notification_settings')
+    .select('*')
+    .eq('group_id', groupId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function saveNotificationSettings(groupId, patch) {
+  const { data, error } = await supabase
+    .from('group_notification_settings')
+    .upsert({ group_id: groupId, ...patch }, { onConflict: 'group_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Admin-only: each member + whether they have push enabled (device count).
+export async function getGroupPushStatus(groupId) {
+  const { data, error } = await supabase.rpc('group_push_status', { p_group_id: groupId });
+  if (error) throw error;
+  return data || [];
+}
+
 // Subscribe to live RSVP changes for a session. Returns an unsubscribe fn.
 export function subscribeRsvps(sessionId, onChange) {
   const channel = supabase

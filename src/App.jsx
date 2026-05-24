@@ -1,7 +1,7 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
 import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
-import { inviteUrl, createInvite, searchPublicGroups } from "./lib/data.js";
+import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus } from "./lib/data.js";
 import { getPushState, enablePush, disablePush } from "./lib/push.js";
 import { sendTestPush } from "./lib/notify.js";
 
@@ -1704,6 +1704,148 @@ const ScheduleEditor = ({ schedule, horizon, onSave, onGenerate }) => {
   );
 };
 
+// Pretty-print an offset (minutes-before-start) and its resulting wall-clock time.
+const fmtOffset = (min) => (min % 60 === 0 ? `${min / 60}h before` : `${min}m before`);
+function firePreview(startTime, offMin) {
+  const [h, m] = String(startTime).split(':').map(Number);
+  let total = h * 60 + (m || 0) - offMin;
+  let prevDay = false;
+  while (total < 0) { total += 1440; prevDay = true; }
+  const hh = Math.floor(total / 60) % 24;
+  const mm = total % 60;
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const h12 = ((hh + 11) % 12) + 1;
+  return `${h12}:${String(mm).padStart(2, '0')} ${ampm}${prevDay ? ' (prev day)' : ''}`;
+}
+
+// Phase 3: per-group reminder ladder (offsets before start) + change-alert toggles.
+// Audience is fixed (Undecided + Maybe); only the timing is configurable here.
+const NotificationLadderEditor = ({ groupId, startTime }) => {
+  const [offsets, setOffsets] = useState([]); // minutes, sorted descending
+  const [onCancel, setOnCancel] = useState(true);
+  const [onChange, setOnChange] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [adding, setAdding] = useState('');
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    getNotificationSettings(groupId).then((row) => {
+      if (!alive) return;
+      if (row) {
+        setOffsets([...(row.reminder_offsets || [])].sort((a, b) => b - a));
+        setOnCancel(row.notify_on_cancel);
+        setOnChange(row.notify_on_change);
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+    return () => { alive = false; };
+  }, [groupId]);
+
+  const persist = async (over) => {
+    setStatus('Saving…');
+    try {
+      await saveNotificationSettings(groupId, {
+        reminder_offsets: over.offsets ?? offsets,
+        notify_on_cancel: over.onCancel ?? onCancel,
+        notify_on_change: over.onChange ?? onChange,
+      });
+      setStatus('Saved'); setTimeout(() => setStatus(''), 1200);
+    } catch (e) { setStatus(e.message || 'Save failed'); }
+  };
+
+  const addOffset = () => {
+    const hrs = parseFloat(adding);
+    if (!hrs || hrs <= 0) { setAdding(''); return; }
+    const min = Math.round(hrs * 60);
+    if (offsets.includes(min)) { setAdding(''); return; }
+    const next = [...offsets, min].sort((a, b) => b - a);
+    setOffsets(next); setAdding(''); persist({ offsets: next });
+  };
+  const removeOffset = (min) => {
+    const next = offsets.filter((o) => o !== min);
+    setOffsets(next); persist({ offsets: next });
+  };
+
+  if (!loaded) return <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>Loading…</div>;
+
+  return (
+    <>
+      <div className="px-4 pt-3 pb-2 text-[11px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+        Nudge players who haven’t answered yet (Undecided or Maybe). Set how far ahead of each session a reminder goes out.
+      </div>
+      {offsets.length === 0 && (
+        <div className="px-4 pb-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>No reminders yet — add one below.</div>
+      )}
+      {offsets.map((min) => (
+        <div key={min} className="px-4 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell size={14} style={{ color: '#c5e500', flexShrink: 0 }} />
+            <span className="text-sm font-semibold">{fmtOffset(min)}</span>
+            {startTime && <span className="text-[11px] truncate" style={{ color: 'var(--text-tertiary)' }}>· fires {firePreview(startTime, min)}</span>}
+          </div>
+          <button onClick={() => removeOffset(min)} className="text-[11px] text-zinc-500 hover:text-rose-400 flex-shrink-0 ml-2">Remove</button>
+        </div>
+      ))}
+      <div className="px-4 py-2.5 flex items-center gap-2">
+        <input type="number" inputMode="decimal" min="0.5" max="48" step="0.5" value={adding}
+          onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOffset(); }}
+          placeholder="Hours before"
+          className="flex-1 bg-transparent py-1.5 px-2 rounded-lg text-sm"
+          style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+        <button onClick={addOffset} disabled={!adding} className="px-4 py-1.5 rounded-lg text-[12px] font-bold disabled:opacity-40"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>Add</button>
+      </div>
+      <div className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+        <ToggleRow label="Notify on cancellation" sub="Alert IN/MAYBE players if a session is cancelled" on={onCancel} onChange={(v) => { setOnCancel(v); persist({ onCancel: v }); }} />
+        <ToggleRow label="Notify on time/location change" sub="Alert IN/MAYBE players if details change" on={onChange} onChange={(v) => { setOnChange(v); persist({ onChange: v }); }} />
+      </div>
+      {status && <div className="px-4 pb-2 text-[11px]" style={{ color: status.startsWith('Save fail') ? '#fb7185' : '#c5e500' }}>{status}</div>}
+    </>
+  );
+};
+
+// Admin view: which members have push enabled (no endpoints exposed).
+const AdminReachPanel = ({ groupId, meName }) => {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let alive = true;
+    getGroupPushStatus(groupId)
+      .then((r) => { if (alive) setRows(r); })
+      .catch((e) => { if (alive) setErr(e.message || 'Could not load'); });
+    return () => { alive = false; };
+  }, [groupId]);
+
+  if (err) return <div className="px-4 py-3 text-[12px]" style={{ color: '#fb7185' }}>{err}</div>;
+  if (!rows) return <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>Loading…</div>;
+
+  const onCount = rows.filter((r) => r.devices > 0).length;
+  return (
+    <>
+      <div className="px-4 pt-3 pb-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+        {onCount} of {rows.length} {rows.length === 1 ? 'member has' : 'members have'} notifications on.
+      </div>
+      {rows.map((r) => {
+        const on = r.devices > 0;
+        const nm = r.full_name || 'Member';
+        return (
+          <div key={r.user_id} className="px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Avatar name={nm} size={28} isYou={nm === meName} />
+              <span className="text-sm truncate">{nm === meName ? `${nm} (you)` : nm}</span>
+            </div>
+            <span className="flex items-center gap-1.5 text-[11px] font-bold flex-shrink-0" style={{ color: on ? '#c5e500' : 'var(--text-faint)' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: on ? '#c5e500' : 'var(--text-faint)', boxShadow: on ? '0 0 6px #c5e500' : 'none' }} />
+              {on ? 'On' : 'Off'}
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
@@ -1747,6 +1889,20 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
         <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
         <ToggleRow label="Members can invite" sub="Let any member share a join link" on={allowMemberInvites} onChange={(v) => update({ allowMemberInvites: v })} />
       </SettingsSection>
+      <SettingsSection title="Check-in reminders">
+        {isDemo ? (
+          <div className="px-4 py-4 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+            Set automatic check-in reminders (e.g. 12h, 8h before) for players who haven’t answered — available in the live app.
+          </div>
+        ) : (
+          <NotificationLadderEditor groupId={groupId} startTime={schedule?.start_time} />
+        )}
+      </SettingsSection>
+      {!isDemo && (
+        <SettingsSection title="Notification reach">
+          <AdminReachPanel groupId={groupId} meName={meName} />
+        </SettingsSection>
+      )}
       <SettingsSection title={`Members · ${memberCount}`}>
         {memberList.map((m, i) => {
           const mname = m.full_name || 'Member';
