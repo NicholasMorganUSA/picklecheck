@@ -1,5 +1,5 @@
 import { useState, useId, useMemo, useEffect, useRef } from "react";
-import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell } from "lucide-react";
+import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft, Shield, ChevronDown, Undo2, Users, Pencil, Trash2, MapPin, Bell, AlertTriangle } from "lucide-react";
 import { useLiveData } from "./hooks/useLiveData.js";
 import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus } from "./lib/data.js";
 import { getPushState, enablePush, disablePush } from "./lib/push.js";
@@ -494,10 +494,108 @@ const TopBar = ({ onMenuClick, onSettingsClick, view, onViewChange, isFiltered, 
 };
 
 // ────────────────────────────────────────────────────────────────────
+// SESSION ADMIN PANEL — expandable controls below the card (admins only).
+// Replaces the old pencil. Weather watch, cancel-with-reason, edit, delete.
+// ────────────────────────────────────────────────────────────────────
+const CANCEL_REASONS = ['Weather', 'Not enough players', 'Court unavailable'];
+
+const SessionAdminPanel = ({ session, open, onToggle, interactive, onSetWatch, onClearWatch, onCancel, onUncancel, onEdit, onDelete }) => {
+  const [reason, setReason] = useState('Weather');
+  const [custom, setCustom] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const cancelReasonValue = reason === 'Other' ? (custom.trim() || null) : reason;
+  const act = async (fn) => { setBusy(true); try { await fn?.(); } finally { setBusy(false); } };
+
+  return (
+    <>
+      <button onClick={onToggle}
+        className="w-full px-5 py-3 flex items-center justify-between text-left border-t transition-all"
+        style={{ borderColor: 'var(--border-medium)', background: open ? 'rgba(244,63,94,0.06)' : 'var(--bg-faint)' }}>
+        <span className="flex items-center gap-2.5">
+          <Shield size={15} style={{ color: 'var(--text-secondary)' }} />
+          <span className="text-[13px] font-bold tracking-wide" style={{ color: 'var(--text-strong)' }}>Admin controls</span>
+        </span>
+        <ChevronDown size={18} style={{ color: 'var(--text-secondary)', transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
+      </button>
+      {open && interactive && (
+        <div className="border-t px-5 py-4 space-y-4" style={{ borderColor: 'var(--border-subtle)' }}>
+          {/* Weather watch */}
+          <div>
+            <div className="text-[10px] tracking-wider font-bold uppercase mb-1.5" style={{ color: 'var(--text-tertiary)' }}>Weather watch</div>
+            {session.watchReason ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px]" style={{ color: '#fcd34d' }}>Active — &ldquo;{session.watchReason}&rdquo;. Players notified.</span>
+                <button disabled={busy} onClick={() => act(onClearWatch)} className="px-3 py-1.5 rounded-lg text-[12px] font-bold flex-shrink-0" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>Clear</button>
+              </div>
+            ) : (
+              <button disabled={busy || session.cancelled} onClick={() => act(() => onSetWatch('Weather'))}
+                className="w-full py-2.5 rounded-xl text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+                style={{ background: 'rgba(252,211,77,0.14)', color: '#fcd34d', border: '1px solid rgba(252,211,77,0.4)' }}>
+                <AlertTriangle size={14} /> Set weather watch &amp; notify
+              </button>
+            )}
+          </div>
+
+          {/* Cancel / un-cancel */}
+          <div className="pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="text-[10px] tracking-wider font-bold uppercase mb-1.5" style={{ color: 'var(--text-tertiary)' }}>{session.cancelled ? 'Cancelled' : 'Cancel session'}</div>
+            {session.cancelled ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px]" style={{ color: '#fb7185' }}>Off{session.cancelReason ? ` — ${session.cancelReason}` : ''}.</span>
+                <button disabled={busy} onClick={() => act(onUncancel)} className="px-3 py-1.5 rounded-lg text-[12px] font-bold flex-shrink-0" style={{ background: 'var(--bg-input)', color: '#86efac' }}>Un-cancel</button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {[...CANCEL_REASONS, 'Other'].map((r) => (
+                    <button key={r} onClick={() => { setReason(r); setConfirmCancel(false); }}
+                      className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold"
+                      style={reason === r
+                        ? { background: 'rgba(244,63,94,0.18)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.4)' }
+                        : { background: 'var(--bg-subtle)', color: 'var(--text-muted)', border: '1px solid var(--border-medium)' }}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                {reason === 'Other' && (
+                  <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Reason (optional)"
+                    className="w-full bg-transparent py-1.5 px-2 rounded-lg text-sm"
+                    style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+                )}
+                <button disabled={busy}
+                  onClick={() => { if (!confirmCancel) { setConfirmCancel(true); return; } act(() => onCancel(cancelReasonValue)); }}
+                  className="w-full py-2.5 rounded-xl text-[12px] font-bold"
+                  style={confirmCancel
+                    ? { background: '#fb3b5e', color: '#fff' }
+                    : { background: 'rgba(244,63,94,0.12)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.3)' }}>
+                  {confirmCancel ? `Tap again to cancel${cancelReasonValue ? ` · ${cancelReasonValue}` : ''}` : 'Cancel session & notify'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Edit / Delete */}
+          <div className="pt-3 border-t flex gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+            <button disabled={busy} onClick={() => onEdit?.()} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1.5" style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>
+              <Pencil size={13} /> Edit time/place
+            </button>
+            <button disabled={busy} onClick={() => { if (!confirmDel) { setConfirmDel(true); return; } act(onDelete); }} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1.5" style={{ background: 'rgba(244,63,94,0.12)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.25)' }}>
+              <Trash2 size={13} /> {confirmDel ? 'Tap to confirm' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────
 // SESSION CARD
 // (interactive=false for peek cards on either side)
 // ────────────────────────────────────────────────────────────────────
-const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name, onPrev, onNext, canPrev = false, canNext = false, canEdit = false, onEdit }) => {
+const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name, onPrev, onNext, canPrev = false, canNext = false, canEdit = false, onEdit, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
   // Real sessions carry groupName + roster + location; the mock prototype falls back to GROUP_INFO/generateRoster.
   const groupName = session.groupName || GROUP_INFO[session.groupId]?.name || 'Group';
   const location = session.location || GROUP_INFO[session.groupId]?.location || null;
@@ -506,6 +604,7 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
   const overall = getOverallStatus(confirmed);
   const o = COLOR[overall];
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const computedRoster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
     [session.id, confirmed, tentative, out, undecided, myStatus, myPartySize]);
   const roster = session.roster || computedRoster;
@@ -517,20 +616,6 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)',
         boxShadow: '0 24px 64px -16px rgba(0,0,0,0.45), 0 1px 0 var(--border-medium) inset',
         opacity: session.cancelled ? 0.72 : 1 }}>
-      {canEdit && (
-        <button onClick={() => interactive && onEdit?.()} aria-label="Edit session"
-          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full"
-          style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}>
-          <Pencil size={14} />
-        </button>
-      )}
-      {session.cancelled && (
-        <div className="absolute top-3 left-3 z-10 text-[10px] font-bold tracking-wider px-2 py-1 rounded-full"
-          style={{ background: 'rgba(244,63,94,0.18)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.35)' }}>
-          CANCELLED
-        </div>
-      )}
-
       {/* Header — group name above, date+time centered with nav arrows, location below */}
       <div className="px-5 pt-4 pb-3 text-center">
         <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{groupName}</div>
@@ -567,22 +652,59 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
         )}
       </div>
 
-      {/* Courts */}
-      <div className="px-5 pt-1 pb-3">
-        <CourtGrid confirmed={confirmed} tentative={tentative} />
-      </div>
-
-      {/* Status badge */}
-      <div className="px-6 pb-4">
-        <div className="flex items-center gap-3 p-3 rounded-2xl"
-          style={{ background: `linear-gradient(90deg, ${o.glow} 0%, transparent 100%)`,
-            border: `1px solid ${o.glow}` }}>
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: o.dot, boxShadow: `0 0 12px ${o.dot}` }} />
-          <div>
-            <div className={`text-sm font-bold tracking-wide ${o.text}`}>{o.label}</div>
-            {o.sub && <div className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</div>}
+      {/* Weather watch banner — heads-up that the session might be called off */}
+      {!session.cancelled && session.watchReason && (
+        <div className="mx-5 mb-2 px-3 py-2 rounded-xl flex items-center gap-2"
+          style={{ background: 'rgba(252,211,77,0.14)', border: '1px solid rgba(252,211,77,0.45)', color: '#fcd34d' }}>
+          <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+          <div className="text-[11px] font-bold tracking-wide leading-tight">
+            {String(session.watchReason).toUpperCase()} WATCH · may cancel — TBD
           </div>
         </div>
+      )}
+
+      {/* Courts (with a big diagonal CANCELLED stamp when called off) */}
+      <div className="px-5 pt-1 pb-3 relative">
+        <CourtGrid confirmed={confirmed} tentative={tentative} />
+        {session.cancelled && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div style={{
+              transform: 'rotate(-13deg)', textTransform: 'uppercase',
+              fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800,
+              fontSize: '34px', letterSpacing: '0.06em', color: '#fb3b5e',
+              border: '4px solid #fb3b5e', borderRadius: '10px', padding: '2px 18px',
+              background: 'rgba(244,59,94,0.10)',
+              boxShadow: '0 0 0 2px rgba(244,59,94,0.2), 0 8px 26px rgba(0,0,0,0.35)',
+              textShadow: '0 2px 8px rgba(0,0,0,0.4)',
+            }}>
+              Cancelled
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Status badge — replaced by a red "off" badge when cancelled */}
+      <div className="px-6 pb-4">
+        {session.cancelled ? (
+          <div className="flex items-center gap-3 p-3 rounded-2xl"
+            style={{ background: 'linear-gradient(90deg, rgba(244,63,94,0.15) 0%, transparent 100%)', border: '1px solid rgba(244,63,94,0.3)' }}>
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#fb3b5e', boxShadow: '0 0 12px #fb3b5e' }} />
+            <div>
+              <div className="text-sm font-bold tracking-wide" style={{ color: '#fb7185' }}>Cancelled</div>
+              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{session.cancelReason || 'This session is off'}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 p-3 rounded-2xl"
+            style={{ background: `linear-gradient(90deg, ${o.glow} 0%, transparent 100%)`,
+              border: `1px solid ${o.glow}` }}>
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: o.dot, boxShadow: `0 0 12px ${o.dot}` }} />
+            <div>
+              <div className={`text-sm font-bold tracking-wide ${o.text}`}>{o.label}</div>
+              {o.sub && <div className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</div>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Party size chip (persistent, lets user set guests before or after opting in) */}
@@ -647,6 +769,18 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
           <RosterSection title="UNDECIDED" names={roster.undecided} color="#71717a" meName={meName} />
         </div>
       )}
+
+      {/* Admin controls (collapsed row always renders for admins; expands only
+          on the interactive card so peek cards don't pop chrome during swipe) */}
+      {canEdit && (
+        <SessionAdminPanel
+          session={session} open={adminOpen} interactive={interactive}
+          onToggle={() => interactive && setAdminOpen((v) => !v)}
+          onSetWatch={onSetWatch} onClearWatch={onClearWatch}
+          onCancel={onCancel} onUncancel={onUncancel}
+          onEdit={onEdit} onDelete={onDelete}
+        />
+      )}
     </div>
   );
 };
@@ -694,7 +828,7 @@ const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }
 // ────────────────────────────────────────────────────────────────────
 // SESSION CAROUSEL — peeks prev/next during swipe
 // ────────────────────────────────────────────────────────────────────
-const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit, canEditOf = () => false }) => {
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit, canEditOf = () => false, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
   const prevSession = filteredSessions[currentIdx - 1] || null;
   const currentSession = filteredSessions[currentIdx];
   const nextSession = filteredSessions[currentIdx + 1] || null;
@@ -813,6 +947,8 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
             meName={meName}
             onPrev={onPrev} onNext={onNext} canPrev={canPrev} canNext={canNext}
             canEdit={canEdit} onEdit={onEdit}
+            onSetWatch={onSetWatch} onClearWatch={onClearWatch}
+            onCancel={onCancel} onUncancel={onUncancel} onDelete={onDelete}
           />
         </div>
         {/* Next */}
@@ -1224,14 +1360,13 @@ const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate
   );
 };
 
-const EditInstanceModal = ({ session, onClose, onSave, onDelete, onToggleCancel }) => {
+const EditInstanceModal = ({ session, onClose, onSave }) => {
   const open = !!session;
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [confirmDel, setConfirmDel] = useState(false);
   useEffect(() => {
     if (session) {
       const d = session.dateObj;
@@ -1239,7 +1374,7 @@ const EditInstanceModal = ({ session, onClose, onSave, onDelete, onToggleCancel 
       setDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
       setTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
       setLocation(session.location || '');
-      setBusy(false); setErr(''); setConfirmDel(false);
+      setBusy(false); setErr('');
     }
   }, [session]);
   const save = async () => {
@@ -1247,17 +1382,6 @@ const EditInstanceModal = ({ session, onClose, onSave, onDelete, onToggleCancel 
     setBusy(true); setErr('');
     try { await onSave({ starts_at: new Date(`${date}T${time}`).toISOString(), location: location.trim() || null }); onClose(); }
     catch (e) { setErr(e.message || 'Could not save'); setBusy(false); }
-  };
-  const toggleCancel = async () => {
-    setBusy(true); setErr('');
-    try { await onToggleCancel(!session.cancelled); onClose(); }
-    catch (e) { setErr(e.message || 'Could not update'); setBusy(false); }
-  };
-  const del = async () => {
-    if (!confirmDel) { setConfirmDel(true); return; }
-    setBusy(true); setErr('');
-    try { await onDelete(); onClose(); }
-    catch (e) { setErr(e.message || 'Could not delete'); setBusy(false); }
   };
   return (
     <ModalSheet open={open} onClose={onClose} title="Edit session">
@@ -1286,17 +1410,7 @@ const EditInstanceModal = ({ session, onClose, onSave, onDelete, onToggleCancel 
           className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40"
           style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Saving…' : 'Save changes'}</button>
         {err && <div className="text-[12px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
-        <div className="flex gap-2 pt-1">
-          <button onClick={toggleCancel} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold"
-            style={{ background: 'var(--bg-input)', color: session?.cancelled ? '#86efac' : '#fcd34d' }}>
-            {session?.cancelled ? 'Un-cancel' : 'Cancel session'}
-          </button>
-          <button onClick={del} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1.5"
-            style={{ background: 'rgba(244,63,94,0.12)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.25)' }}>
-            <Trash2 size={13} />{confirmDel ? 'Tap again to delete' : 'Delete'}
-          </button>
-        </div>
-        <div className="text-[10px] text-zinc-600 text-center">Cancel keeps the session visible as &ldquo;cancelled.&rdquo; Delete removes it entirely.</div>
+        <div className="text-[10px] text-zinc-600 text-center">Cancel &amp; delete now live under &ldquo;Admin controls&rdquo; on the session card.</div>
       </div>
     </ModalSheet>
   );
@@ -2436,6 +2550,11 @@ export default function App({ account = null }) {
                 meName={meName}
                 canEdit={canEditCurrent} onEdit={() => setEditSession(currentSession)}
                 canEditOf={canEditOf}
+                onSetWatch={(r) => currentSession && live.updateSession(currentSession.id, { watch_reason: r })}
+                onClearWatch={() => currentSession && live.updateSession(currentSession.id, { watch_reason: null })}
+                onCancel={(reason) => currentSession && live.updateSession(currentSession.id, { cancelled_at: new Date().toISOString(), cancel_reason: reason || null, watch_reason: null })}
+                onUncancel={() => currentSession && live.updateSession(currentSession.id, { cancelled_at: null, cancel_reason: null })}
+                onDelete={() => currentSession && live.deleteSession(currentSession.id)}
               />
             )
           ))}
@@ -2499,9 +2618,7 @@ export default function App({ account = null }) {
       <InviteMemberModal open={!!inviteForGroup} onClose={() => setInviteForGroup(null)}
         groupName={inviteForGroup ? groupInfo[inviteForGroup]?.name : ''} groupId={inviteForGroup} real={!isDemo} />
       <EditInstanceModal session={editSession} onClose={() => setEditSession(null)}
-        onSave={(patch) => live.updateSession(editSession.id, patch)}
-        onDelete={() => live.deleteSession(editSession.id)}
-        onToggleCancel={(cancel) => live.updateSession(editSession.id, { cancelled_at: cancel ? new Date().toISOString() : null })} />
+        onSave={(patch) => live.updateSession(editSession.id, patch)} />
     </div>
   );
 }

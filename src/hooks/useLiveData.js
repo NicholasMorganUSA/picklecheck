@@ -52,6 +52,8 @@ function adaptSession(s, group, members, rsvps, myId, now, schedule) {
     timeDiffers,
     createdBy: s.created_by,
     cancelled: !!s.cancelled_at,
+    cancelReason: s.cancel_reason || null,
+    watchReason: s.watch_reason || null,
     dateObj,
     courtCount: s.court_count,
     in: sumParty(buckets.in),
@@ -170,12 +172,14 @@ export function useLiveData(enabled) {
 
   const updateSession = useCallback(async (id, patch) => {
     await data.updateSession(id, patch);
-    // Fire a push to committed players (best-effort; never blocks the UI).
+    // Fire a push (best-effort; never blocks the UI). The reason text is read
+    // server-side from the row we just wrote, so we only send the kind here.
     try {
       if (patch.cancelled_at) await notifySessionChange(id, 'cancel');
+      else if (patch.watch_reason) await notifySessionChange(id, 'watch');
       else if ('location' in patch || 'starts_at' in patch) await notifySessionChange(id, 'change');
     } catch (e) {
-      console.warn('[notify] change alert failed:', e);
+      console.warn('[notify] alert failed:', e);
     }
     await load();
   }, [load]);
