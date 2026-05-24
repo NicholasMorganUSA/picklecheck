@@ -1546,6 +1546,41 @@ const DemoSettings = ({ onBack }) => (
   </div>
 );
 
+// Weekly nudge for people who DENIED notifications (the one case auto-enable
+// can't fix — re-enabling needs OS settings). Snoozes 7 days when dismissed.
+const NUDGE_KEY = 'pc_notif_nudge_dismissed_at';
+const NUDGE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const NotificationNudge = () => {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getPushState().then((s) => {
+      if (!alive) return;
+      let snoozed = false;
+      try { const t = Number(localStorage.getItem(NUDGE_KEY) || 0); snoozed = !!t && (Date.now() - t < NUDGE_SNOOZE_MS); } catch { /* ignore */ }
+      setShow(s === 'denied' && !snoozed);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!show) return null;
+  const dismiss = () => { try { localStorage.setItem(NUDGE_KEY, String(Date.now())); } catch { /* ignore */ } setShow(false); };
+  return (
+    <div className="rounded-2xl px-4 py-3 flex items-start gap-3" style={{ background: 'rgba(252,211,77,0.10)', border: '1px solid rgba(252,211,77,0.35)' }}>
+      <Bell size={18} style={{ color: '#fcd34d', flexShrink: 0, marginTop: '1px' }} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-bold" style={{ color: 'var(--text-strong)' }}>Notifications are off</div>
+        <div className="text-[11px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
+          You&rsquo;re missing check-in reminders, cancellations &amp; weather watches. Turn them on for PickleCheck in your phone&rsquo;s Settings &rarr; Notifications, then reopen the app.
+        </div>
+      </div>
+      <button onClick={dismiss} aria-label="Dismiss" className="flex-shrink-0 p-0.5" style={{ color: 'var(--text-tertiary)' }}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
+
 // Device-level push enable/disable + a "send test" check. The per-type toggles
 // below it are personal preferences; THIS is the actual on/off for this device.
 const PushControl = () => {
@@ -2537,6 +2572,7 @@ export default function App({ account = null }) {
         />
 
         <div className="space-y-4 mt-3">
+          {!isDemo && view === 'today' && <NotificationNudge />}
           {view === 'today' && (isDemo ? (
             filtered.length > 0 && (
               <>
