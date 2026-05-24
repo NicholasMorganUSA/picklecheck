@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.jsx';
 import AppGate from './AppGate.jsx';
 import Join from './components/Join.jsx';
+import IOSInstallPrompt from './components/IOSInstallPrompt.jsx';
 import { AuthProvider } from './lib/auth.jsx';
 import './index.css';
 
@@ -22,6 +23,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           {/* Unknown paths fall back to the app (which prompts login) */}
           <Route path="*" element={<AppGate />} />
         </Routes>
+        <IOSInstallPrompt />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
