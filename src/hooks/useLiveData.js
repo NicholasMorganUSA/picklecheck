@@ -166,6 +166,9 @@ export function useLiveData(enabled) {
 
   const createSession = useCallback(async (args) => {
     const s = await data.createSession(args);
+    // Tell the whole group a new session exists (best-effort; never blocks UI).
+    try { if (s?.id) await notifySessionChange(s.id, 'new'); }
+    catch (e) { console.warn('[notify] new-session alert failed:', e); }
     await load();
     return s;
   }, [load]);

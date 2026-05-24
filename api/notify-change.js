@@ -1,8 +1,9 @@
-// Event alert — called by the client right after an admin acts on a session:
-//   • cancel : session called off          → everyone NOT out
-//   • watch  : "weather watch" heads-up     → everyone NOT out
-//   • change : time/location changed        → committed players (IN + MAYBE)
-// The reason text is read from the row server-side. Caller must be a group admin.
+// Event alert — called by the client right after a session action:
+//   • new    : session just created         → EVERYONE in the group (member auth)
+//   • cancel : session called off           → everyone NOT out (admin auth)
+//   • watch  : "weather watch" heads-up      → everyone NOT out (admin auth)
+//   • change : time/location changed         → committed players IN+MAYBE (admin auth)
+// The reason text is read from the row server-side.
 import {
   admin, userIdFromRequest, subscriptionsForUsers, sendToSubscriptions, formatWhen, readJsonBody,
 } from './_lib.js';
@@ -14,8 +15,8 @@ export default async function handler(req, res) {
   if (!uid) return res.status(401).json({ error: 'not signed in' });
 
   const { sessionId, kind } = readJsonBody(req);
-  if (!sessionId || !['cancel', 'change', 'watch'].includes(kind)) {
-    return res.status(400).json({ error: 'sessionId and kind (cancel|change|watch) required' });
+  if (!sessionId || !['new', 'cancel', 'change', 'watch'].includes(kind)) {
+    return res.status(400).json({ error: 'sessionId and kind (new|cancel|change|watch) required' });
   }
 
   const db = admin();
@@ -26,14 +27,16 @@ export default async function handler(req, res) {
       .eq('id', sessionId).single();
     if (!session) return res.status(404).json({ error: 'session not found' });
 
-    // Caller must be an admin of the group.
+    // Auth: 'new' only needs group membership (members may create ad-hoc
+    // sessions); the rest are admin-only actions.
     const { data: mem } = await db
       .from('group_members').select('role')
       .eq('group_id', session.group_id).eq('user_id', uid).maybeSingle();
-    if (!mem || mem.role !== 'admin') return res.status(403).json({ error: 'not a group admin' });
+    if (!mem) return res.status(403).json({ error: 'not a group member' });
+    if (kind !== 'new' && mem.role !== 'admin') return res.status(403).json({ error: 'not a group admin' });
 
-    // Respect the group's toggles (default on). A weather watch always sends —
-    // it's an explicit, deliberate admin action.
+    // Respect the group's toggles (default on). 'new' and 'watch' always send —
+    // they're explicit, deliberate actions.
     const { data: cfg } = await db
       .from('group_notification_settings')
       .select('notify_on_cancel, notify_on_change').eq('group_id', session.group_id).maybeSingle();
@@ -47,6 +50,7 @@ export default async function handler(req, res) {
     const gname = grp?.name || 'PickleCheck';
 
     // Audience:
+    //   new → everyone in the group
     //   change → committed (IN + MAYBE)
     //   cancel/watch → everyone who hasn't opted out (IN + MAYBE + UNDECIDED/no-row)
     let audience;
@@ -54,21 +58,26 @@ export default async function handler(req, res) {
       const { data: rsvps } = await db
         .from('rsvps').select('user_id, status').eq('session_id', sessionId).in('status', ['in', 'maybe']);
       audience = (rsvps || []).map((r) => r.user_id);
+    } else if (kind === 'new') {
+      const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
+      audience = (members || []).map((m) => m.user_id);
     } else {
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
       const { data: rsvps } = await db.from('rsvps').select('user_id, status').eq('session_id', sessionId);
       const outSet = new Set((rsvps || []).filter((r) => r.status === 'out').map((r) => r.user_id));
       audience = (members || []).map((m) => m.user_id).filter((id) => !outSet.has(id));
     }
-    audience = audience.filter((id) => id !== uid); // never notify the admin who acted
+    audience = audience.filter((id) => id !== uid); // never notify the person who acted
     if (!audience.length) return res.status(200).json({ ok: true, sent: 0 });
 
     const cancelReason = session.cancel_reason ? ` — ${session.cancel_reason}` : '';
     const watchReason = session.watch_reason || 'Weather';
+    const loc = session.location ? ` · ${session.location}` : '';
     const payload = {
+      new:    { title: `New session — ${gname}`, body: `${when}${loc} · In or Out?`, tag: `new-${sessionId}`, url: `/?session=${sessionId}`, actions: [{ action: 'in', title: "I'm in" }, { action: 'out', title: 'Out' }] },
       cancel: { title: `Cancelled — ${gname}`, body: `${when} is cancelled${cancelReason}.`, tag: `cancel-${sessionId}`, url: `/?session=${sessionId}` },
       watch:  { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
-      change: { title: `Updated — ${gname}`, body: `${when}${session.location ? ' · ' + session.location : ''} — details changed.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
+      change: { title: `Updated — ${gname}`, body: `${when}${loc} — details changed.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
     }[kind];
 
     const subsByUser = await subscriptionsForUsers(db, audience);
