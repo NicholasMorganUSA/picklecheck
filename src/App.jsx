@@ -1347,7 +1347,7 @@ const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate
         </label>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location</div>
-          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Riverside Courts"
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
@@ -1402,7 +1402,7 @@ const EditInstanceModal = ({ session, onClose, onSave }) => {
         </div>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location</div>
-          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Riverside Courts"
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
@@ -2299,7 +2299,7 @@ const CreateGroupModal = ({ open, onClose, onCreate }) => {
         </label>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Location (optional)</div>
-          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. CBT Church Gym"
+          <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Riverside Courts"
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
