@@ -2293,7 +2293,7 @@ const CreateGroupModal = ({ open, onClose, onCreate }) => {
         <div className="text-[11px] text-zinc-500 leading-snug">Your recurring crew. You&rsquo;ll be the admin and can invite players with a link.</div>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Group name</div>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. CBT Sunday" autoFocus
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sunday Doubles" autoFocus
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
