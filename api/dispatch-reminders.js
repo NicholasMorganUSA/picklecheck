@@ -62,7 +62,9 @@ export default async function handler(req, res) {
         totalSent += await dispatchStep(db, session, offMin, nameByGroup[session.group_id], tz);
       }
     }
-    return res.status(200).json({ ok: true, sent: totalSent });
+
+    const cancelled = await runAutoCancel(db, now);
+    return res.status(200).json({ ok: true, sent: totalSent, auto_cancelled: cancelled });
   } catch (e) {
     console.error('[dispatch-reminders] error', e);
     return res.status(500).json({ error: e.message || String(e) });
@@ -123,4 +125,67 @@ async function dispatchStep(db, session, offMin, groupName, tz) {
     sent += await sendToSubscriptions(db, subsByUser[uid] || [], payload);
   }
   return sent;
+}
+
+// Auto-cancel: for groups with auto_cancel_minutes_before set, cancel any
+// upcoming session inside that window if its IN count is below the group's
+// minimum. Cancelled rows are skipped on subsequent ticks, so this fires once.
+async function runAutoCancel(db, now) {
+  const { data: groups } = await db
+    .from('groups')
+    .select('id, name, auto_cancel_minutes_before, auto_cancel_min_players')
+    .not('auto_cancel_minutes_before', 'is', null);
+  if (!groups || !groups.length) return 0;
+  const cfgByGroup = {};
+  for (const g of groups) cfgByGroup[g.id] = g;
+
+  const { data: sessions } = await db
+    .from('sessions')
+    .select('id, group_id, starts_at, location')
+    .in('group_id', Object.keys(cfgByGroup))
+    .is('cancelled_at', null)
+    .gt('starts_at', new Date(now).toISOString());
+  if (!sessions || !sessions.length) return 0;
+
+  let cancelledCount = 0;
+  for (const s of sessions) {
+    const g = cfgByGroup[s.group_id];
+    const minsToStart = Math.floor((new Date(s.starts_at).getTime() - now) / 60000);
+    if (minsToStart <= 0 || minsToStart > g.auto_cancel_minutes_before) continue;
+
+    const minP = g.auto_cancel_min_players ?? 4;
+    const { data: ins } = await db
+      .from('rsvps').select('party_size').eq('session_id', s.id).eq('status', 'in');
+    const inCount = (ins || []).reduce((n, r) => n + (r.party_size || 1), 0);
+    if (inCount >= minP) continue;
+
+    const reason = `Not enough players (${inCount} of ${minP})`;
+    const { error: cancelErr } = await db
+      .from('sessions')
+      .update({ cancelled_at: new Date(now).toISOString(), cancel_reason: reason })
+      .eq('id', s.id);
+    if (cancelErr) { console.error('[auto-cancel] update failed', cancelErr); continue; }
+    cancelledCount += 1;
+
+    // Push: notify everyone in the group except those explicitly OUT.
+    const { data: members } = await db.from('group_members').select('user_id').eq('group_id', s.group_id);
+    const { data: rsvps } = await db.from('rsvps').select('user_id, status').eq('session_id', s.id);
+    const outSet = new Set((rsvps || []).filter((r) => r.status === 'out').map((r) => r.user_id));
+    const audience = (members || []).map((m) => m.user_id).filter((uid) => !outSet.has(uid));
+
+    const { data: sched } = await db.from('schedules').select('timezone').eq('group_id', s.group_id).maybeSingle();
+    const when = formatWhen(s.starts_at, sched?.timezone);
+    const payload = {
+      title: `Cancelled — ${g.name || 'PickleCheck'}`,
+      body: `${when} is cancelled — ${reason}.`,
+      tag: `cancel-${s.id}`,
+      url: `/?session=${s.id}`,
+    };
+    const subsByUser = await subscriptionsForUsers(db, audience);
+    for (const uid of audience) {
+      await sendToSubscriptions(db, subsByUser[uid] || [], payload);
+      await db.from('notification_deliveries').insert({ kind: 'cancel', session_id: s.id, user_id: uid });
+    }
+  }
+  return cancelledCount;
 }

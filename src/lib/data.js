@@ -25,7 +25,7 @@ export async function listMyGroups() {
     .map((r) => ({ ...r.group, role: r.role }));
 }
 
-export async function createGroup({ name, location = null, isPublic = false, allowAdhoc = false, horizon = 4 }) {
+export async function createGroup({ name, location = null, isPublic = false, allowAdhoc = true, horizon = 5 }) {
   const { data, error } = await supabase.rpc('create_group', {
     p_name: name,
     p_location: location,

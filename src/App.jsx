@@ -1034,7 +1034,7 @@ const WeekView = ({ sessions, onSelect }) => {
 // ────────────────────────────────────────────────────────────────────
 // GROUPS MENU
 // ────────────────────────────────────────────────────────────────────
-const GroupsMenu = ({ open, onClose, onManage, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, onInviteMember, isDemo = false }) => {
+const GroupsMenu = ({ open, onClose, onManage, onDetails, visibleGroups, setVisibleGroups, onAddInstance, onDiscover, groups = [], onCreateGroup, onInviteMember, isDemo = false }) => {
   const allIds = groups.map((g) => g.id);
   const allVisible = allIds.every(id => visibleGroups.has(id));
   const noneVisible = visibleGroups.size === 0;
@@ -1112,7 +1112,8 @@ const GroupsMenu = ({ open, onClose, onManage, visibleGroups, setVisibleGroups, 
                 const showAdd = isDemo || g.role === 'admin' || g.allow_adhoc;
                 const showInvite = (g.role === 'admin' || g.allow_member_invites) && !!onInviteMember;
                 const showManage = g.role === 'admin';
-                if (!showAdd && !showInvite && !showManage) return null;
+                const showDetails = !showManage && !isDemo && !!onDetails;
+                if (!showAdd && !showInvite && !showManage && !showDetails) return null;
                 return (
                   <div className="flex border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                     {showAdd && (
@@ -1131,6 +1132,12 @@ const GroupsMenu = ({ open, onClose, onManage, visibleGroups, setVisibleGroups, 
                       <button onClick={() => onManage(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
                         style={{ borderColor: 'var(--border-subtle)', color: 'rgba(197,229,0,0.85)' }}>
                         Manage<ChevR size={11} />
+                      </button>
+                    )}
+                    {showDetails && (
+                      <button onClick={() => onDetails(g.id)} className="flex-1 px-3.5 py-2 text-[11px] font-semibold flex items-center justify-center gap-1 border-l"
+                        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                        Details<ChevR size={11} />
                       </button>
                     )}
                   </div>
@@ -2046,11 +2053,69 @@ const GroupRoster = ({ groupId, meName }) => {
   );
 };
 
+// Plain-English schedule summary for the member Details view.
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function scheduleSummary(schedule) {
+  if (!schedule || !schedule.days_of_week?.length || !schedule.start_time) return 'No recurring schedule yet';
+  const days = [...schedule.days_of_week].map(Number).sort();
+  const dayStr = days.length === 1 ? DAY_FULL[days[0]] : days.map((d) => DAY_ABBR[d]).join(', ');
+  const [h, m] = String(schedule.start_time).split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = ((h + 11) % 12) + 1;
+  const timeStr = `${h12}:${String(m || 0).padStart(2, '0')} ${ampm}`;
+  const prefix = schedule.frequency === 'biweekly' ? 'Every other' : 'Every';
+  return `${prefix} ${dayStr} at ${timeStr}`;
+}
+
+// Read-only view for non-admin members: schedule summary + members list with role badges.
+const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName = MOCK_USER.name }) => (
+  <div>
+    <div className="flex items-center gap-3 pb-4">
+      <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
+        <ArrowLeft size={18} style={{ color: 'var(--text-strong)' }} />
+      </button>
+      <div className="min-w-0">
+        <div className="text-xl font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{group?.name || 'Group'}</div>
+        <div className="text-[10px] font-bold tracking-wider mt-0.5" style={{ color: 'var(--text-tertiary)' }}>DETAILS</div>
+      </div>
+    </div>
+    <SettingsSection title="About">
+      <div className="px-4 py-3">
+        <div className="text-[10px] tracking-wider font-bold uppercase mb-1" style={{ color: 'var(--text-tertiary)' }}>Schedule</div>
+        <div className="text-sm" style={{ color: 'var(--text-strong)' }}>{scheduleSummary(schedule)}</div>
+        {group?.location && (
+          <>
+            <div className="text-[10px] tracking-wider font-bold uppercase mb-1 mt-3" style={{ color: 'var(--text-tertiary)' }}>Location</div>
+            <div className="text-sm" style={{ color: 'var(--text-strong)' }}>{group.location}</div>
+          </>
+        )}
+      </div>
+    </SettingsSection>
+    <SettingsSection title={`Members · ${members.length}`}>
+      {members.map((m, i) => {
+        const mname = m.full_name || 'Member';
+        const isYou = mname === meName;
+        const isAdmin = m.role === 'admin';
+        return (
+          <div key={m.id ?? i} className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Avatar name={mname} size={32} isYou={isYou} />
+              <div className="text-sm">{isYou ? `${mname} (you)` : mname}</div>
+            </div>
+            <div className="text-[10px] tracking-wider font-bold" style={{ color: isAdmin ? '#c5e500' : 'var(--text-faint)' }}>{(m.role || 'member').toUpperCase()}</div>
+          </div>
+        );
+      })}
+    </SettingsSection>
+  </div>
+);
+
 const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
-  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false } = s;
+  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false, autoCancelWindow = null, autoCancelMin = 4 } = s;
   const memberList = members ?? [
     { full_name: 'Pickleballer', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
     { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' }, { full_name: 'Jay Pickett', role: 'member' },
@@ -2090,6 +2155,30 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
         <StepperRow label="Horizon" sub="Number of upcoming instances to generate" value={horizon} onChange={(v) => update({ horizon: v })} min={1} max={10} unit=" ahead" />
         <ToggleRow label="Members can create ad-hoc" sub="Allow non-admins to add one-off sessions" on={allowAdhoc} onChange={(v) => update({ allowAdhoc: v })} />
         <ToggleRow label="Members can invite" sub="Let any member share a join link" on={allowMemberInvites} onChange={(v) => update({ allowMemberInvites: v })} />
+      </SettingsSection>
+      <SettingsSection title="Auto-cancel">
+        <div className="px-4 pt-3 pb-2 text-[11px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+          If fewer than the minimum have committed by the cutoff before start, cancel the session and notify everyone.
+        </div>
+        <div className="px-4 py-2 flex items-center justify-between gap-2">
+          <div className="text-sm">Cancel-if-short within</div>
+          <select value={autoCancelWindow ?? ''} onChange={(e) => update({ autoCancelWindow: e.target.value === '' ? null : Number(e.target.value) })}
+            className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }}>
+            <option value="">Off</option>
+            <option value="15">15 min before</option>
+            <option value="30">30 min before</option>
+            <option value="45">45 min before</option>
+            <option value="60">1 hr before</option>
+            <option value="90">90 min before</option>
+            <option value="120">2 hr before</option>
+            <option value="180">3 hr before</option>
+            <option value="240">4 hr before</option>
+            <option value="360">6 hr before</option>
+            <option value="720">12 hr before</option>
+          </select>
+        </div>
+        <StepperRow label="Minimum to play" sub="Auto-cancel triggers below this IN count" value={autoCancelMin ?? 4} onChange={(v) => update({ autoCancelMin: v })} min={2} max={16} unit=" players" />
       </SettingsSection>
       <SettingsSection title="Check-in reminders">
         {isDemo ? (
@@ -2471,6 +2560,7 @@ export default function App({ account = null }) {
   // "Clear filter" = make every group visible again.
   const handleClearFilter = () => setVisibleGroups(new Set(allGroupIds));
   const handleManage = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-settings'); };
+  const handleDetails = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-details'); };
 
   // Real groups are visible-by-default in the menu (union in new ones; never wipe user hides).
   useEffect(() => {
@@ -2667,12 +2757,25 @@ export default function App({ account = null }) {
             ? <DemoSettings onBack={() => setView('today')} />
             : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} />
           )}
+          {view === 'group-details' && !isDemo && (() => {
+            const ag = (live.groups || []).find((g) => g.id === activeGroupId);
+            if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
+            return (
+              <GroupDetailsView
+                group={ag}
+                onBack={() => setView('today')}
+                schedule={live.schedulesByGroup?.[activeGroupId] || null}
+                members={live.membersByGroup?.[activeGroupId] || []}
+                meName={meName}
+              />
+            );
+          })()}
           {view === 'group-settings' && (isDemo ? (
             <GroupSettingsView groupId={activeGroupId} onBack={() => setView('today')} settings={groupSettingsMap[activeGroupId]} update={(patch) => updateGroupSettings(activeGroupId, patch)} isDemo />
           ) : (() => {
             const ag = (live.groups || []).find(g => g.id === activeGroupId);
             if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
-            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites };
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites, autoCancelWindow: ag.auto_cancel_minutes_before, autoCancelMin: ag.auto_cancel_min_players };
             return (
               <GroupSettingsView
                 groupId={activeGroupId}
@@ -2692,6 +2795,8 @@ export default function App({ account = null }) {
                   if ('allowAdhoc' in patch) db.allow_adhoc = patch.allowAdhoc;
                   if ('allowMemberInvites' in patch) db.allow_member_invites = patch.allowMemberInvites;
                   if ('horizon' in patch) db.horizon = patch.horizon;
+                  if ('autoCancelWindow' in patch) db.auto_cancel_minutes_before = patch.autoCancelWindow;
+                  if ('autoCancelMin' in patch) db.auto_cancel_min_players = patch.autoCancelMin;
                   if (Object.keys(db).length) live.saveGroup(activeGroupId, db);
                 }}
               />
@@ -2700,7 +2805,7 @@ export default function App({ account = null }) {
         </div>
       </div>
 
-      <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onManage={handleManage}
+      <GroupsMenu open={groupsOpen} onClose={() => setGroupsOpen(false)} onManage={handleManage} onDetails={handleDetails}
         visibleGroups={visibleGroups} setVisibleGroups={setVisibleGroups}
         groups={Object.values(groupInfo)} isDemo={isDemo}
         onCreateGroup={() => { setGroupsOpen(false); if (isDemo) setView('settings'); else setCreateGroupOpen(true); }}
