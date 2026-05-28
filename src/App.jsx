@@ -3,7 +3,7 @@ import { Menu, Settings, ArrowLeft, Plus, X, ChevronRight as ChevR, ChevronLeft,
 import { useLiveData } from "./hooks/useLiveData.js";
 import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus, updateMemberRole, listOutRanges, addOutRange, deleteOutRange } from "./lib/data.js";
 import { getPushState, enablePush, refreshSubscription } from "./lib/push.js";
-import { sendTestPush } from "./lib/notify.js";
+import { sendTestPush, notifyDropout } from "./lib/notify.js";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -1423,6 +1423,26 @@ const EditInstanceModal = ({ session, onClose, onSave }) => {
   );
 };
 
+// Confirm modal when an IN player tries to drop close to start. Yes alerts the group.
+const DropoutConfirmModal = ({ control, onConfirm, onClose }) => {
+  const open = !!control;
+  const action = control?.targetStatus === 'out' ? 'drop out' : 'switch to tentative';
+  const grp = control?.groupName || 'the group';
+  return (
+    <ModalSheet open={open} onClose={onClose} title="Heads up — close to game time">
+      <div className="space-y-4">
+        <div className="text-[13px] leading-snug" style={{ color: 'var(--text-secondary)' }}>
+          You're checked <span style={{ color: '#c5e500', fontWeight: 700 }}>IN</span> for this session. If you {action} now, the rest of <span style={{ color: 'var(--text-strong)', fontWeight: 600 }}>{grp}</span> will get a push so someone can step in. Sure?
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold" style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>Stay in</button>
+          <button onClick={onConfirm} className="flex-1 py-3 rounded-2xl text-sm font-bold" style={{ background: '#fb3b5e', color: '#fff' }}>Yes, {action}</button>
+        </div>
+      </div>
+    </ModalSheet>
+  );
+};
+
 const PartySizeModal = ({ control, onConfirm, onClose }) => {
   const [size, setSize] = useState(1);
   useEffect(() => { if (control) setSize(control.initialSize); }, [control]);
@@ -2115,7 +2135,7 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
-  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false, autoCancelWindow = null, autoCancelMin = 4 } = s;
+  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false, autoCancelWindow = null, autoCancelMin = 4, lastminuteWindow = null } = s;
   const memberList = members ?? [
     { full_name: 'Pickleballer', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
     { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' }, { full_name: 'Jay Pickett', role: 'member' },
@@ -2179,6 +2199,26 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           </select>
         </div>
         <StepperRow label="Minimum to play" sub="Auto-cancel triggers below this IN count" value={autoCancelMin ?? 4} onChange={(v) => update({ autoCancelMin: v })} min={2} max={16} unit=" players" />
+      </SettingsSection>
+      <SettingsSection title="Last-minute drops">
+        <div className="px-4 pt-3 pb-2 text-[11px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+          If an IN player drops within this window before start, confirm with them and then alert everyone NOT IN so someone can step in.
+        </div>
+        <div className="px-4 py-2 flex items-center justify-between gap-2">
+          <div className="text-sm">Alert window</div>
+          <select value={lastminuteWindow ?? ''} onChange={(e) => update({ lastminuteWindow: e.target.value === '' ? null : Number(e.target.value) })}
+            className="bg-transparent py-1.5 px-2 rounded-lg text-sm"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }}>
+            <option value="">Off</option>
+            <option value="30">30 min before</option>
+            <option value="60">1 hr before</option>
+            <option value="90">90 min before</option>
+            <option value="120">2 hr before</option>
+            <option value="180">3 hr before</option>
+            <option value="240">4 hr before</option>
+            <option value="360">6 hr before</option>
+          </select>
+        </div>
       </SettingsSection>
       <SettingsSection title="Check-in reminders">
         {isDemo ? (
@@ -2444,6 +2484,7 @@ export default function App({ account = null }) {
   // Party size: sticky default for next IN/MAYBE commit, plus a modal control object
   const [lastPartySize, setLastPartySize] = useState(1);
   const [partyModal, setPartyModal] = useState(null); // { targetStatus, initialSize } | null
+  const [dropoutConfirm, setDropoutConfirm] = useState(null); // { targetStatus, sessionId } | null
   const [theme, setTheme] = useState('dark');
   // Group settings keyed by groupId — also lifted for persistence
   const [groupSettingsMap, setGroupSettingsMap] = useState(() => {
@@ -2502,6 +2543,20 @@ export default function App({ account = null }) {
   // Button tap on IN/MAYBE/OUT. Opens modal if user is committing with size > 1.
   const handleMyStatus = (newStatus) => {
     if (newStatus === myStatus) return;
+    // Last-minute drop check: currently IN, switching to OUT/TENTATIVE inside the
+    // group's drop-out window → confirm with a modal first (and the confirm fires
+    // the alert to everyone NOT IN so someone can fill in).
+    if (!isDemo && myStatus === 'in' && (newStatus === 'out' || newStatus === 'maybe')) {
+      const cs = filtered[safeIdx];
+      const win = cs && groupInfo[cs.groupId]?.lastminute_window_minutes;
+      if (cs && win) {
+        const minsTo = (cs.dateObj.getTime() - Date.now()) / 60000;
+        if (minsTo > 0 && minsTo <= win) {
+          setDropoutConfirm({ targetStatus: newStatus, sessionId: cs.id, groupName: cs.groupName });
+          return;
+        }
+      }
+    }
     // OUT/UNDECIDED don't track party size — direct commit at size 1
     if (newStatus === 'out' || newStatus === 'undecided') {
       applyStatusChange(newStatus, 1);
@@ -2775,7 +2830,7 @@ export default function App({ account = null }) {
           ) : (() => {
             const ag = (live.groups || []).find(g => g.id === activeGroupId);
             if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
-            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites, autoCancelWindow: ag.auto_cancel_minutes_before, autoCancelMin: ag.auto_cancel_min_players };
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites, autoCancelWindow: ag.auto_cancel_minutes_before, autoCancelMin: ag.auto_cancel_min_players, lastminuteWindow: ag.lastminute_window_minutes };
             return (
               <GroupSettingsView
                 groupId={activeGroupId}
@@ -2797,6 +2852,7 @@ export default function App({ account = null }) {
                   if ('horizon' in patch) db.horizon = patch.horizon;
                   if ('autoCancelWindow' in patch) db.auto_cancel_minutes_before = patch.autoCancelWindow;
                   if ('autoCancelMin' in patch) db.auto_cancel_min_players = patch.autoCancelMin;
+                  if ('lastminuteWindow' in patch) db.lastminute_window_minutes = patch.lastminuteWindow;
                   if (Object.keys(db).length) live.saveGroup(activeGroupId, db);
                 }}
               />
@@ -2818,6 +2874,17 @@ export default function App({ account = null }) {
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
         onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
+      <DropoutConfirmModal
+        control={dropoutConfirm}
+        onClose={() => setDropoutConfirm(null)}
+        onConfirm={() => {
+          const ctl = dropoutConfirm;
+          setDropoutConfirm(null);
+          if (!ctl) return;
+          applyStatusChange(ctl.targetStatus, 1);
+          notifyDropout(ctl.sessionId).catch((e) => console.warn('[dropout] notify failed', e));
+        }}
+      />
       <CreateGroupModal open={createGroupOpen} onClose={() => setCreateGroupOpen(false)}
         onCreate={async (args) => {
           const g = await live.createGroup(args);

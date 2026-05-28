@@ -28,7 +28,13 @@ export function sendTestPush() {
 }
 
 // Notify IN + MAYBE players that a session was cancelled or changed.
-// kind: 'cancel' | 'change'. Best-effort — callers should not block UI on it.
+// kind: 'cancel' | 'change' | 'new' | 'watch'. Best-effort — callers should not block UI on it.
 export function notifySessionChange(sessionId, kind) {
   return authedPost('/api/notify-change', { sessionId, kind });
+}
+
+// "Last-minute drop" alert: an IN player dropped close to start. Pushes everyone
+// NOT currently IN so someone can fill in.
+export function notifyDropout(sessionId) {
+  return authedPost('/api/notify-change', { sessionId, kind: 'dropout' });
 }
