@@ -62,9 +62,9 @@ export default async function handler(req, res) {
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
       audience = (members || []).map((m) => m.user_id);
     } else if (kind === 'dropout') {
+      // Everyone in the group — IN players need to know the court math changed too.
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
-      const inSet = new Set((allRsvps || []).filter((r) => r.status === 'in').map((r) => r.user_id));
-      audience = (members || []).map((m) => m.user_id).filter((id) => !inSet.has(id));
+      audience = (members || []).map((m) => m.user_id);
     } else {
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
       const outSet = new Set((allRsvps || []).filter((r) => r.status === 'out').map((r) => r.user_id));
@@ -77,8 +77,10 @@ export default async function handler(req, res) {
     const watchReason = session.watch_reason || 'Weather';
     const loc = session.location ? ` · ${session.location}` : '';
 
-    // For dropout: name the caller + show the post-drop IN count (and the group's
-    // minimum if set), so recipients see both who dropped and why it matters.
+    // For dropout: lead the title with a status emoji + post-drop IN count
+    // (matches the card's court-status color: red <4, green if multiple of 4,
+    // orange =7, yellow otherwise). Body identifies who dropped.
+    let dropoutTitle = '';
     let dropoutBody = '';
     if (kind === 'dropout') {
       const { data: caller } = await db.from('profiles').select('full_name').eq('id', uid).single();
@@ -86,8 +88,10 @@ export default async function handler(req, res) {
       const inCount = (allRsvps || []).filter((r) => r.status === 'in').reduce((n, r) => n + (r.party_size || 1), 0);
       const { data: g2 } = await db.from('groups').select('auto_cancel_min_players').eq('id', session.group_id).single();
       const minP = g2?.auto_cancel_min_players;
-      const ofMin = minP ? ` of ${minP}` : '';
-      dropoutBody = `${callerName} can't make it · ${inCount}${ofMin} in. Can you jump in?`;
+      const emoji = inCount < 4 ? '🔴' : inCount % 4 === 0 ? '🟢' : inCount === 7 ? '🟠' : '🟡';
+      const countStr = minP ? `${inCount} of ${minP} in` : `${inCount} in`;
+      dropoutTitle = `${emoji} ${countStr} — ${gname}`;
+      dropoutBody = `${callerName} just dropped. Tap to update your RSVP.`;
     }
 
     const payload = {
@@ -96,7 +100,7 @@ export default async function handler(req, res) {
       watch:   { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
       change:  { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Tap to update your RSVP.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
       // Unique tag per drop so multiple drops don't collapse on the device.
-      dropout: { title: `Last-minute drop — ${gname}`, body: dropoutBody, tag: `dropout-${sessionId}-${Date.now()}`, url: `/?session=${sessionId}` },
+      dropout: { title: dropoutTitle, body: dropoutBody, tag: `dropout-${sessionId}-${Date.now()}`, url: `/?session=${sessionId}` },
     }[kind];
     payload.sessionId = sessionId;
 
