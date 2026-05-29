@@ -618,7 +618,12 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
         opacity: session.cancelled ? 0.72 : 1 }}>
       {/* Header — group name above, date+time centered with nav arrows, location below */}
       <div className="px-5 pt-4 pb-3 text-center">
-        <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{groupName}</div>
+        <div className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
+          {groupName}
+          {session.invitedUserIds && (
+            <span className="ml-1.5" style={{ color: '#fcd34d' }}>· 🔒 {session.invitedCount} invited</span>
+          )}
+        </div>
         <div className="flex items-center justify-between gap-1">
           <button onClick={() => interactive && onPrev?.()} disabled={!canPrev} aria-label="Previous session"
             className="p-1 flex-shrink-0 disabled:opacity-20" style={{ color: 'var(--text-tertiary)' }}>

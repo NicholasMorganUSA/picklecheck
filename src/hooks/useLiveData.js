@@ -10,6 +10,8 @@ const MS_HOUR = 3600 * 1000;
 // { id, groupId, groupName, dateObj, courtCount, in, maybe, out, undecided,
 //   myStatus, myPartySize, past, roster:{in,maybe,out,undecided} }
 function adaptSession(s, group, members, rsvps, myId, now, schedule) {
+  // Restricted ad-hoc session — only show the invited subset everywhere on the card.
+  const invitedSet = (s.invited_user_ids && s.invited_user_ids.length) ? new Set(s.invited_user_ids) : null;
   const buckets = { in: [], maybe: [], out: [] };
   let myStatus = 'undecided';
   let myPartySize = 1;
@@ -21,13 +23,17 @@ function adaptSession(s, group, members, rsvps, myId, now, schedule) {
       myStatus = r.status;
       myPartySize = r.party_size || 1;
     }
+    // Skip stale RSVPs from people not in the invite list (e.g. someone uninvited
+    // after RSVPing). RLS normally prevents these but guard defensively.
+    if (invitedSet && !invitedSet.has(uid)) continue;
     if (r.status === 'in' || r.status === 'maybe' || r.status === 'out') {
       buckets[r.status].push({ id: uid, name, party: r.party_size || 1 });
     }
   }
 
   const decided = new Set([...buckets.in, ...buckets.maybe, ...buckets.out].map((x) => x.id));
-  const undecidedMembers = members.filter((m) => !decided.has(m.id));
+  const eligibleMembers = invitedSet ? members.filter((m) => invitedSet.has(m.id)) : members;
+  const undecidedMembers = eligibleMembers.filter((m) => !decided.has(m.id));
 
   const sumParty = (list) => list.reduce((n, x) => n + (x.party || 1), 0);
   const label = (x) => (x.party > 1 ? `${x.name} +${x.party - 1}` : x.name);
@@ -54,6 +60,9 @@ function adaptSession(s, group, members, rsvps, myId, now, schedule) {
     cancelled: !!s.cancelled_at,
     cancelReason: s.cancel_reason || null,
     watchReason: s.watch_reason || null,
+    // null = open to whole group; array length = "Restricted · N invited" badge.
+    invitedUserIds: s.invited_user_ids || null,
+    invitedCount: invitedSet ? invitedSet.size : 0,
     dateObj,
     courtCount: s.court_count,
     in: sumParty(buckets.in),
