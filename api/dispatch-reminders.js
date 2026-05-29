@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     // Upcoming, non-cancelled sessions for those groups.
     const { data: sessions, error: sErr } = await db
       .from('sessions')
-      .select('id, group_id, starts_at, location, cancelled_at')
+      .select('id, group_id, starts_at, location, cancelled_at, invited_user_ids')
       .in('group_id', groupIds)
       .gte('starts_at', new Date(now).toISOString())
       .lte('starts_at', new Date(now + WINDOW_MS).toISOString())
@@ -81,8 +81,14 @@ function inQuietHours(cfg, tz, nowMs) {
 
 async function dispatchStep(db, session, offMin, groupName, tz) {
   const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
-  const memberIds = (members || []).map((m) => m.user_id);
+  let memberIds = (members || []).map((m) => m.user_id);
   if (!memberIds.length) return 0;
+  // Restricted ad-hoc: only invited users are even eligible.
+  if (Array.isArray(session.invited_user_ids) && session.invited_user_ids.length) {
+    const invited = new Set(session.invited_user_ids);
+    memberIds = memberIds.filter((uid) => invited.has(uid));
+    if (!memberIds.length) return 0;
+  }
 
   const { data: rsvps } = await db.from('rsvps').select('user_id, status').eq('session_id', session.id);
   const statusByUser = {};
@@ -141,7 +147,7 @@ async function runAutoCancel(db, now) {
 
   const { data: sessions } = await db
     .from('sessions')
-    .select('id, group_id, starts_at, location')
+    .select('id, group_id, starts_at, location, invited_user_ids')
     .in('group_id', Object.keys(cfgByGroup))
     .is('cancelled_at', null)
     .gt('starts_at', new Date(now).toISOString());
@@ -171,7 +177,12 @@ async function runAutoCancel(db, now) {
     const { data: members } = await db.from('group_members').select('user_id').eq('group_id', s.group_id);
     const { data: rsvps } = await db.from('rsvps').select('user_id, status').eq('session_id', s.id);
     const outSet = new Set((rsvps || []).filter((r) => r.status === 'out').map((r) => r.user_id));
-    const audience = (members || []).map((m) => m.user_id).filter((uid) => !outSet.has(uid));
+    let audience = (members || []).map((m) => m.user_id).filter((uid) => !outSet.has(uid));
+    // Restricted ad-hoc: only invited users get notified.
+    if (Array.isArray(s.invited_user_ids) && s.invited_user_ids.length) {
+      const invited = new Set(s.invited_user_ids);
+      audience = audience.filter((uid) => invited.has(uid));
+    }
 
     const { data: sched } = await db.from('schedules').select('timezone').eq('group_id', s.group_id).maybeSingle();
     const when = formatWhen(s.starts_at, sched?.timezone);

@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   try {
     const { data: session } = await db
       .from('sessions')
-      .select('id, group_id, starts_at, location, cancel_reason, watch_reason')
+      .select('id, group_id, starts_at, location, cancel_reason, watch_reason, invited_user_ids')
       .eq('id', sessionId).single();
     if (!session) return res.status(404).json({ error: 'session not found' });
 
@@ -71,6 +71,11 @@ export default async function handler(req, res) {
       audience = (members || []).map((m) => m.user_id).filter((id) => !outSet.has(id));
     }
     audience = audience.filter((id) => id !== uid); // never notify the person who acted
+    // Restricted ad-hoc: intersect with the explicit invite list.
+    if (Array.isArray(session.invited_user_ids) && session.invited_user_ids.length) {
+      const invited = new Set(session.invited_user_ids);
+      audience = audience.filter((id) => invited.has(id));
+    }
     if (!audience.length) return res.status(200).json({ ok: true, sent: 0 });
 
     const cancelReason = session.cancel_reason ? ` — ${session.cancel_reason}` : '';

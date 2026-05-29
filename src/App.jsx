@@ -1314,23 +1314,41 @@ const ThemeModal = ({ open, onClose, theme, setTheme }) => {
   );
 };
 
-const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate }) => {
+const AddInstanceModal = ({ groupId, groupName, groupLocation, members = [], onClose, onCreate }) => {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [rosterOpen, setRosterOpen] = useState(false);
   const open = !!groupId;
   const g = groupId ? GROUP_INFO[groupId] : null;
   const titleName = groupName || g?.name;
   // Default the location to the group's standing location; admin can override per session.
-  useEffect(() => { if (open) { setDate(''); setTime(''); setLocation(groupLocation || ''); setBusy(false); setErr(null); } }, [open, groupId, groupLocation]);
+  useEffect(() => {
+    if (open) {
+      setDate(''); setTime(''); setLocation(groupLocation || '');
+      setBusy(false); setErr(null);
+      setSelected(new Set((members || []).map((m) => m.id)));
+      setRosterOpen(false);
+    }
+  }, [open, groupId, groupLocation, members]);
+  const allCount = (members || []).length;
+  const selectedCount = selected.size;
+  const allSelected = allCount > 0 && selectedCount === allCount;
+  const toggle = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const selectAll = () => setSelected(new Set((members || []).map((m) => m.id)));
+  const unselectAll = () => setSelected(new Set());
   const submit = async () => {
     if (!date || !time) return;
     setBusy(true); setErr(null);
     try {
       const startsAt = new Date(`${date}T${time}`).toISOString();
-      if (onCreate) await onCreate({ groupId, startsAt, location: location.trim() || null });
+      // null = open to whole group (no restriction). Send the explicit list only
+      // if the admin actually de-selected someone.
+      const invitedUserIds = allSelected ? null : [...selected];
+      if (onCreate) await onCreate({ groupId, startsAt, location: location.trim() || null, invitedUserIds });
       onClose();
     } catch (e) { setErr(e.message || 'Could not create session'); setBusy(false); }
   };
@@ -1338,7 +1356,7 @@ const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate
     <ModalSheet open={open} onClose={onClose} title={titleName ? `Add instance · ${titleName}` : 'Add instance'}>
       <div className="space-y-3 text-sm">
         <div className="text-[11px] text-zinc-500 leading-snug">
-          Create a one-off session outside the recurring schedule. The whole group will be notified.
+          Create a one-off session outside the recurring schedule. By default everyone in the group is invited — tap Roster to limit it.
         </div>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Date</div>
@@ -1358,7 +1376,45 @@ const AddInstanceModal = ({ groupId, groupName, groupLocation, onClose, onCreate
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
-        <button onClick={submit} disabled={!date || !time || busy}
+        {allCount > 0 && (
+          <div>
+            <div className="flex items-center justify-between">
+              <button onClick={() => setRosterOpen((v) => !v)}
+                className="text-[10px] tracking-wider text-zinc-500 font-bold uppercase flex items-center gap-1">
+                Roster · {allSelected ? `Everyone (${allCount})` : `${selectedCount} of ${allCount}`}
+                <ChevronDown size={12} style={{ transform: rosterOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
+              </button>
+              {rosterOpen && (
+                <div className="flex gap-2 text-[10px] font-bold">
+                  <button onClick={selectAll} style={{ color: '#c5e500' }}>Select all</button>
+                  <span style={{ color: 'var(--text-faint)' }}>·</span>
+                  <button onClick={unselectAll} style={{ color: 'var(--text-tertiary)' }}>Unselect all</button>
+                </div>
+              )}
+            </div>
+            {rosterOpen && (
+              <div className="mt-2 max-h-56 overflow-y-auto rounded-lg" style={{ background: 'var(--bg-faint)', border: '1px solid var(--border-medium)' }}>
+                {members.map((m) => {
+                  const nm = m.full_name || 'Member';
+                  const checked = selected.has(m.id);
+                  return (
+                    <label key={m.id} className="flex items-center gap-2.5 px-3 py-2 border-b last:border-b-0 cursor-pointer" style={{ borderColor: 'var(--border-subtle)' }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggle(m.id)} className="accent-lime-400" />
+                      <Avatar name={nm} size={24} />
+                      <span className="text-sm">{nm}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {!allSelected && (
+              <div className="mt-1.5 text-[10px] leading-snug" style={{ color: '#fcd34d' }}>
+                Restricted session — only the selected {selectedCount} member{selectedCount === 1 ? '' : 's'} will see it and get notified.
+              </div>
+            )}
+          </div>
+        )}
+        <button onClick={submit} disabled={!date || !time || busy || (allCount > 0 && selectedCount === 0)}
           className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
           style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Creating…' : 'Create instance'}</button>
         {err && <div className="text-[12px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
@@ -2870,6 +2926,7 @@ export default function App({ account = null }) {
         onDiscover={() => { setGroupsOpen(false); if (isDemo) setView('settings'); else setDiscoverOpen(true); }} />
       <AddInstanceModal groupId={addInstanceFor} groupName={addInstanceFor ? groupInfo[addInstanceFor]?.name : null}
         groupLocation={addInstanceFor ? groupInfo[addInstanceFor]?.location : ''}
+        members={addInstanceFor ? (live.membersByGroup?.[addInstanceFor] || []) : []}
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
         onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />

@@ -203,7 +203,7 @@ export async function listSessions(groupIds) {
   return data || [];
 }
 
-export async function createSession({ groupId, startsAt, location = null, courtCount = 1, isAdhoc = true }) {
+export async function createSession({ groupId, startsAt, location = null, courtCount = 1, isAdhoc = true, invitedUserIds = null }) {
   const { data: auth } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('sessions')
@@ -214,6 +214,8 @@ export async function createSession({ groupId, startsAt, location = null, courtC
       court_count: courtCount,
       is_adhoc: isAdhoc,
       created_by: auth?.user?.id ?? null,
+      // null = open to the whole group; array = only these users see/get notified.
+      invited_user_ids: invitedUserIds && invitedUserIds.length ? invitedUserIds : null,
     })
     .select()
     .single();
