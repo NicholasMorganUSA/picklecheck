@@ -86,11 +86,8 @@ export default async function handler(req, res) {
       const { data: caller } = await db.from('profiles').select('full_name').eq('id', uid).single();
       const callerName = caller?.full_name || 'A player';
       const inCount = (allRsvps || []).filter((r) => r.status === 'in').reduce((n, r) => n + (r.party_size || 1), 0);
-      const { data: g2 } = await db.from('groups').select('auto_cancel_min_players').eq('id', session.group_id).single();
-      const minP = g2?.auto_cancel_min_players;
       const emoji = inCount < 4 ? '🔴' : inCount % 4 === 0 ? '🟢' : inCount === 7 ? '🟠' : '🟡';
-      const countStr = minP ? `${inCount} of ${minP} in` : `${inCount} in`;
-      dropoutTitle = `${emoji} Drop · ${countStr} — ${gname}`;
+      dropoutTitle = `${emoji} Drop · ${inCount} confirmed — ${gname}`;
       dropoutBody = `${callerName} dropped out — last minute. Tap to update your RSVP.`;
     }
 
