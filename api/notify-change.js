@@ -90,8 +90,8 @@ export default async function handler(req, res) {
       const minP = g2?.auto_cancel_min_players;
       const emoji = inCount < 4 ? '🔴' : inCount % 4 === 0 ? '🟢' : inCount === 7 ? '🟠' : '🟡';
       const countStr = minP ? `${inCount} of ${minP} in` : `${inCount} in`;
-      dropoutTitle = `${emoji} ${countStr} — ${gname}`;
-      dropoutBody = `${callerName} just dropped. Tap to update your RSVP.`;
+      dropoutTitle = `${emoji} Drop · ${countStr} — ${gname}`;
+      dropoutBody = `${callerName} dropped out — last minute. Tap to update your RSVP.`;
     }
 
     const payload = {
