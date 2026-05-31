@@ -1383,39 +1383,44 @@ const AddInstanceModal = ({ groupId, groupName, groupLocation, members = [], onC
         </label>
         {allCount > 0 && (
           <div>
-            <div className="flex items-center justify-between">
-              <button onClick={() => setRosterOpen((v) => !v)}
-                className="text-[10px] tracking-wider text-zinc-500 font-bold uppercase flex items-center gap-1">
-                Roster · {allSelected ? `Everyone (${allCount})` : `${selectedCount} of ${allCount}`}
-                <ChevronDown size={12} style={{ transform: rosterOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
-              </button>
-              {rosterOpen && (
-                <div className="flex gap-2 text-[10px] font-bold">
+            <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Who&rsquo;s invited</div>
+            <button onClick={() => setRosterOpen((v) => !v)}
+              className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm flex items-center justify-between"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }}>
+              <span className="flex items-center gap-2">
+                <Users size={15} style={{ color: allSelected ? '#c5e500' : '#fcd34d' }} />
+                <span style={{ fontWeight: 600 }}>
+                  {allSelected ? `Everyone · ${allCount} members` : `${selectedCount} of ${allCount} selected`}
+                </span>
+              </span>
+              <ChevronDown size={16} style={{ color: 'var(--text-tertiary)', transform: rosterOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
+            </button>
+            <div className="mt-1 text-[10px] leading-snug" style={{ color: allSelected ? 'var(--text-tertiary)' : '#fcd34d' }}>
+              {allSelected
+                ? 'Tap above to limit who sees this instance.'
+                : `Restricted — only ${selectedCount} member${selectedCount === 1 ? '' : 's'} will see it and get notified.`}
+            </div>
+            {rosterOpen && (
+              <>
+                <div className="mt-2 flex justify-end gap-2 text-[10px] font-bold">
                   <button onClick={selectAll} style={{ color: '#c5e500' }}>Select all</button>
                   <span style={{ color: 'var(--text-faint)' }}>·</span>
                   <button onClick={unselectAll} style={{ color: 'var(--text-tertiary)' }}>Unselect all</button>
                 </div>
-              )}
-            </div>
-            {rosterOpen && (
-              <div className="mt-2 max-h-56 overflow-y-auto rounded-lg" style={{ background: 'var(--bg-faint)', border: '1px solid var(--border-medium)' }}>
-                {members.map((m) => {
-                  const nm = m.full_name || 'Member';
-                  const checked = selected.has(m.id);
-                  return (
-                    <label key={m.id} className="flex items-center gap-2.5 px-3 py-2 border-b last:border-b-0 cursor-pointer" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <input type="checkbox" checked={checked} onChange={() => toggle(m.id)} className="accent-lime-400" />
-                      <Avatar name={nm} size={24} />
-                      <span className="text-sm">{nm}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-            {!allSelected && (
-              <div className="mt-1.5 text-[10px] leading-snug" style={{ color: '#fcd34d' }}>
-                Restricted session — only the selected {selectedCount} member{selectedCount === 1 ? '' : 's'} will see it and get notified.
-              </div>
+                <div className="mt-2 max-h-56 overflow-y-auto rounded-lg" style={{ background: 'var(--bg-faint)', border: '1px solid var(--border-medium)' }}>
+                  {members.map((m) => {
+                    const nm = m.full_name || 'Member';
+                    const checked = selected.has(m.id);
+                    return (
+                      <label key={m.id} className="flex items-center gap-2.5 px-3 py-2 border-b last:border-b-0 cursor-pointer" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggle(m.id)} className="accent-lime-400" />
+                        <Avatar name={nm} size={24} />
+                        <span className="text-sm">{nm}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
