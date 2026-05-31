@@ -181,10 +181,12 @@ function SafariSteps() {
         {' '}<strong style={{ color: '#fafafa' }}>Share</strong> button — a square with an arrow pointing up, at the <strong style={{ color: '#fafafa' }}>bottom of Safari</strong> (top-right on iPad).
       </Step>
       <Step n={2}>
-        Scroll down in the menu that appears and tap{' '}
-        <strong style={{ color: '#fafafa' }}>&ldquo;Add to Home Screen&rdquo;</strong>.
+        In the menu that pops up, tap the <strong style={{ color: '#fafafa' }}>More</strong> button at the <strong style={{ color: '#fafafa' }}>bottom-right</strong>.
       </Step>
       <Step n={3}>
+        Tap <strong style={{ color: '#fafafa' }}>&ldquo;Add to Home Screen&rdquo;</strong>.
+      </Step>
+      <Step n={4}>
         Tap <strong style={{ color: '#fafafa' }}>&ldquo;Add&rdquo;</strong> in the top-right corner. PickleCheck will appear on your Home Screen — <strong style={{ color: '#fafafa' }}>open it from there</strong>, not Safari.
       </Step>
     </div>
