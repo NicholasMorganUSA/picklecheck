@@ -4,6 +4,7 @@ import { useLiveData } from "./hooks/useLiveData.js";
 import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, saveNotificationSettings, getGroupPushStatus, updateMemberRole, listOutRanges, addOutRange, deleteOutRange } from "./lib/data.js";
 import { getPushState, enablePush, refreshSubscription } from "./lib/push.js";
 import { sendTestPush, notifyDropout } from "./lib/notify.js";
+import TutorialModal from "./components/TutorialModal.jsx";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -1618,7 +1619,7 @@ const DiscoverGroupsModal = ({ open, onClose, onJoin, myGroupIds = [] }) => {
   );
 };
 // In the demo, the gear opens a sign-up prompt instead of real settings.
-const DemoSettings = ({ onBack }) => (
+const DemoSettings = ({ onBack, onOpenTutorial }) => (
   <div>
     <div className="flex items-center gap-3 pb-4">
       <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
@@ -1636,6 +1637,9 @@ const DemoSettings = ({ onBack }) => (
         Sign up / Log in
       </a>
     </div>
+    <button onClick={() => onOpenTutorial?.()} className="w-full mt-3 py-3 rounded-2xl text-sm font-semibold" style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-medium)' }}>
+      Replay the tour
+    </button>
   </div>
 );
 
@@ -1757,7 +1761,7 @@ const PushControl = () => {
   );
 };
 
-const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) => {
+const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOpenTutorial }) => {
   const { name, email, remind24, remind3, lockIn, summary } = settings;
   // In the real app, profile name/email come from the signed-in account.
   const displayName = account?.name ?? name;
@@ -1856,6 +1860,7 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account }) =>
       </SettingsSection>
       <SettingsSection title="App">
         <SettingsRow label="Theme" value={theme === 'light' ? 'Light' : theme === 'system' ? 'System' : 'Dark'} action onClick={() => setThemeOpen(true)} />
+        <SettingsRow label="Tutorial" value="Replay the tour" action onClick={() => onOpenTutorial?.()} />
         <SettingsRow label="About" action />
       </SettingsSection>
       <div className="text-center text-[10px] pt-2 pb-4" style={{ color: 'var(--text-faint)' }}><BrandHeader /><div className="mt-2">v0.1 · prototype</div></div>
@@ -2551,6 +2556,7 @@ export default function App({ account = null }) {
   const [lastPartySize, setLastPartySize] = useState(1);
   const [partyModal, setPartyModal] = useState(null); // { targetStatus, initialSize } | null
   const [dropoutConfirm, setDropoutConfirm] = useState(null); // { targetStatus, sessionId } | null
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [theme, setTheme] = useState('dark');
   // Group settings keyed by groupId — also lifted for persistence
   const [groupSettingsMap, setGroupSettingsMap] = useState(() => {
@@ -2768,6 +2774,24 @@ export default function App({ account = null }) {
     return () => cleanup?.();
   }, [isDemo, account]);
 
+  // First-run tutorial: auto-open once per device (demo + real app keyed separately).
+  // A Settings → Tutorial row reopens it anytime.
+  useEffect(() => {
+    const key = isDemo ? 'pc_demo_tutorial_v1' : 'pc_app_tutorial_v1';
+    try {
+      if (!localStorage.getItem(key)) {
+        const t = setTimeout(() => setTutorialOpen(true), 700);
+        return () => clearTimeout(t);
+      }
+    } catch { /* ignore */ }
+  }, [isDemo]);
+
+  const closeTutorial = () => {
+    setTutorialOpen(false);
+    const key = isDemo ? 'pc_demo_tutorial_v1' : 'pc_app_tutorial_v1';
+    try { localStorage.setItem(key, '1'); } catch { /* ignore */ }
+  };
+
   return (
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
       style={{
@@ -2875,8 +2899,8 @@ export default function App({ account = null }) {
           ))}
           {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
           {view === 'settings' && (isDemo
-            ? <DemoSettings onBack={() => setView('today')} />
-            : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} />
+            ? <DemoSettings onBack={() => setView('today')} onOpenTutorial={() => setTutorialOpen(true)} />
+            : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} onOpenTutorial={() => setTutorialOpen(true)} />
           )}
           {view === 'group-details' && !isDemo && (() => {
             const ag = (live.groups || []).find((g) => g.id === activeGroupId);
@@ -2941,6 +2965,7 @@ export default function App({ account = null }) {
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
         onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
+      <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
       <DropoutConfirmModal
         control={dropoutConfirm}
         onClose={() => setDropoutConfirm(null)}
