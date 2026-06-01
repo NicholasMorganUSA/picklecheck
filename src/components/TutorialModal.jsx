@@ -18,7 +18,7 @@ const STEPS = [
   {
     icon: '👇',
     title: 'One tap to commit',
-    body: "Every upcoming game is a card. Tap I'M IN, TENTATIVE, or OUT — everyone sees it instantly. Bringing guests? Adjust your party size right on the card.",
+    body: "Every upcoming game is a card. Tap I'M IN, TENTATIVE, or OUT — everyone sees it instantly. Bringing guests? Adjust your party size right on the card. Heading on vacation? Set an auto-out range in Settings and you'll auto-OUT for those dates across every group you're in.",
   },
   {
     icon: '👈👉',
@@ -33,7 +33,7 @@ const STEPS = [
   {
     icon: '🛡️',
     title: 'For admins: run your group',
-    body: "Open Manage to set the recurring schedule, invite members via share link, auto-cancel when you're short on players, auto-out members during vacations, and flag a weather watch when it might get scrapped.",
+    body: "Open Manage to set the recurring schedule, invite members via share link, auto-cancel sessions when you're short on players, and flag a weather watch when one might get scrapped. Tune the reminder ladder per group so check-in nudges land at the right times.",
   },
   {
     icon: '🚀',

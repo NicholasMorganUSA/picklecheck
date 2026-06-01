@@ -2777,7 +2777,7 @@ export default function App({ account = null }) {
   // First-run tutorial: auto-open once per device (demo + real app keyed separately).
   // A Settings → Tutorial row reopens it anytime.
   useEffect(() => {
-    const key = isDemo ? 'pc_demo_tutorial_v1' : 'pc_app_tutorial_v1';
+    const key = isDemo ? 'pc_demo_tutorial_v2' : 'pc_app_tutorial_v2';
     try {
       if (!localStorage.getItem(key)) {
         const t = setTimeout(() => setTutorialOpen(true), 700);
@@ -2788,7 +2788,7 @@ export default function App({ account = null }) {
 
   const closeTutorial = () => {
     setTutorialOpen(false);
-    const key = isDemo ? 'pc_demo_tutorial_v1' : 'pc_app_tutorial_v1';
+    const key = isDemo ? 'pc_demo_tutorial_v2' : 'pc_app_tutorial_v2';
     try { localStorage.setItem(key, '1'); } catch { /* ignore */ }
   };
 
