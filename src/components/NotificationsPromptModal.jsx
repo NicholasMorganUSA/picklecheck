@@ -32,6 +32,10 @@ function isIOS() {
   return /iphone|ipad|ipod/i.test(ua)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
+function isStandalone() {
+  return window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches;
+}
 
 export default function NotificationsPromptModal({ active }) {
   const [eligible, setEligible] = useState(false);
@@ -44,6 +48,11 @@ export default function NotificationsPromptModal({ active }) {
   useEffect(() => {
     if (!active) return;
     if (dismissedToday()) return;
+    // Mobile + installed (standalone) only. Desktop never sees this; mobile
+    // users see the install banner first, and we wait until they're inside
+    // the installed PWA to nag about notifications.
+    if (!isIOS() && !isAndroid()) return;
+    if (!isStandalone()) return;
     let alive = true;
     (async () => {
       const s = await getPushState().catch(() => 'off');
