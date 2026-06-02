@@ -5,6 +5,7 @@ import { inviteUrl, createInvite, searchPublicGroups, getNotificationSettings, s
 import { getPushState, enablePush, refreshSubscription } from "./lib/push.js";
 import { sendTestPush, notifyDropout } from "./lib/notify.js";
 import TutorialModal from "./components/TutorialModal.jsx";
+import NotificationsPromptModal from "./components/NotificationsPromptModal.jsx";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -2746,32 +2747,24 @@ export default function App({ account = null }) {
     didDeepLink.current = true;
   }, [isDemo, live.sessions, filtered]);
 
-  // Notifications are on by default — no manual opt-in. If permission is already
-  // granted, subscribe this device silently on load. If it's never been asked,
-  // fire the OS prompt on the user's first tap (the one "Allow" tap is the only
-  // thing Apple/Google won't let us skip). Denied/iOS-not-installed: can't auto-fix.
+  // Keep install-status (standalone) + last_seen fresh each open. The actual
+  // permission prompt is owned by NotificationsPromptModal — full-screen nag,
+  // not a silent first-tap surprise.
   const didAutoPush = useRef(false);
   useEffect(() => {
     if (isDemo || !account || didAutoPush.current) return;
     didAutoPush.current = true;
-    let cleanup;
+    refreshSubscription();
+    // If permission is already granted but not subscribed yet (e.g. fresh
+    // device after re-installing), silently subscribe — no need to bug them.
     (async () => {
       try {
-        // Re-save the subscription each open so install-status (standalone) and
-        // last-seen stay current — e.g. once they finally install the PWA.
-        refreshSubscription();
         const state = await getPushState();
-        if (state !== 'off') return; // 'on' = done; needs-install/denied/unsupported = can't
-        if (Notification.permission === 'granted') {
+        if (state === 'off' && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           enablePush().catch(() => {});
-        } else if (Notification.permission === 'default') {
-          const onFirstTap = () => { enablePush().catch(() => {}); };
-          window.addEventListener('pointerdown', onFirstTap, { once: true });
-          cleanup = () => window.removeEventListener('pointerdown', onFirstTap);
         }
       } catch { /* ignore */ }
     })();
-    return () => cleanup?.();
   }, [isDemo, account]);
 
   // First-run tutorial: auto-open once per device (demo + real app keyed separately).
@@ -2850,7 +2843,6 @@ export default function App({ account = null }) {
         />
 
         <div className="space-y-4 mt-3">
-          {!isDemo && view === 'today' && <NotificationNudge />}
           {view === 'today' && (isDemo ? (
             filtered.length > 0 && (
               <>
@@ -2966,6 +2958,7 @@ export default function App({ account = null }) {
         onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
+      <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen} />
       <DropoutConfirmModal
         control={dropoutConfirm}
         onClose={() => setDropoutConfirm(null)}
