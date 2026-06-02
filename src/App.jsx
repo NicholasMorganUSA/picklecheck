@@ -49,6 +49,35 @@ const THEME = {
     '--orb-emerald':      'rgba(16, 185, 129, 0.06)',
     '--orb-rose':         'rgba(244, 63, 94, 0.05)',
   },
+  // Medium: dark theme lightened a touch. Sandbox for color tweaks — leave
+  // dark/light alone while iterating here.
+  medium: {
+    '--bg-app':           '#16161d',
+    '--bg-card':          'rgba(34, 34, 44, 0.62)',
+    '--bg-card-solid':    '#1c1c26',
+    '--bg-surface':       'rgba(34, 34, 44, 0.55)',
+    '--bg-subtle':        'rgba(255, 255, 255, 0.045)',
+    '--bg-faint':         'rgba(255, 255, 255, 0.035)',
+    '--bg-glass':         'rgba(255, 255, 255, 0.065)',
+    '--bg-input':         'rgba(255, 255, 255, 0.075)',
+    '--bg-input-hover':   'rgba(255, 255, 255, 0.095)',
+    '--bg-overlay':       'rgba(0, 0, 0, 0.55)',
+    '--bg-modal':         '#1d1d27',
+    '--bg-select-option': '#1d1d27',
+    '--text-strong':      '#fafafa',
+    '--text-primary':     'rgba(255, 255, 255, 0.92)',
+    '--text-secondary':   'rgba(255, 255, 255, 0.72)',
+    '--text-muted':       'rgba(255, 255, 255, 0.58)',
+    '--text-tertiary':    'rgba(255, 255, 255, 0.42)',
+    '--text-faint':       'rgba(255, 255, 255, 0.28)',
+    '--text-disabled':    'rgba(255, 255, 255, 0.18)',
+    '--border-subtle':    'rgba(255, 255, 255, 0.065)',
+    '--border-medium':    'rgba(255, 255, 255, 0.10)',
+    '--border-strong':    'rgba(255, 255, 255, 0.13)',
+    '--orb-green':        'rgba(197, 229, 0, 0.12)',
+    '--orb-emerald':      'rgba(16, 185, 129, 0.07)',
+    '--orb-rose':         'rgba(244, 63, 94, 0.06)',
+  },
   light: {
     '--bg-app':           '#f4f4f5',
     '--bg-card':          'rgba(255, 255, 255, 0.92)',
@@ -1281,6 +1310,7 @@ const ModalSheet = ({ open, onClose, title, children }) => {
 const ThemeModal = ({ open, onClose, theme, setTheme }) => {
   const options = [
     { id: 'dark',   label: 'Dark',   sub: 'Neon on charcoal',              available: true  },
+    { id: 'medium', label: 'Medium', sub: 'A touch lighter than dark',     available: true  },
     { id: 'light',  label: 'Light',  sub: 'Bright surfaces, dark text',    available: true  },
     { id: 'system', label: 'System', sub: 'Match your device setting',     available: false },
   ];
@@ -1860,7 +1890,7 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOp
         )}
       </SettingsSection>
       <SettingsSection title="App">
-        <SettingsRow label="Theme" value={theme === 'light' ? 'Light' : theme === 'system' ? 'System' : 'Dark'} action onClick={() => setThemeOpen(true)} />
+        <SettingsRow label="Theme" value={theme === 'light' ? 'Light' : theme === 'medium' ? 'Medium' : theme === 'system' ? 'System' : 'Dark'} action onClick={() => setThemeOpen(true)} />
         <SettingsRow label="Tutorial" value="Replay the tour" action onClick={() => onOpenTutorial?.()} />
         <SettingsRow label="About" action />
       </SettingsSection>
@@ -2558,7 +2588,16 @@ export default function App({ account = null }) {
   const [partyModal, setPartyModal] = useState(null); // { targetStatus, initialSize } | null
   const [dropoutConfirm, setDropoutConfirm] = useState(null); // { targetStatus, sessionId } | null
   const [tutorialOpen, setTutorialOpen] = useState(false);
-  const [theme, setTheme] = useState('dark');
+  // Persisted in localStorage so it survives backgrounding / reload.
+  const [theme, setTheme] = useState(() => {
+    try {
+      const t = localStorage.getItem('pc_theme');
+      return t === 'dark' || t === 'medium' || t === 'light' ? t : 'dark';
+    } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pc_theme', theme); } catch { /* ignore */ }
+  }, [theme]);
   // Group settings keyed by groupId — also lifted for persistence
   const [groupSettingsMap, setGroupSettingsMap] = useState(() => {
     const m = {};
