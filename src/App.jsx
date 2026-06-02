@@ -2589,11 +2589,23 @@ export default function App({ account = null }) {
   const [dropoutConfirm, setDropoutConfirm] = useState(null); // { targetStatus, sessionId } | null
   const [tutorialOpen, setTutorialOpen] = useState(false);
   // Persisted in localStorage so it survives backgrounding / reload.
+  // One-time migration: anyone whose stored theme is 'dark' (or unset) at
+  // first load after this deploy gets bumped to 'medium' (the new default).
+  // The flag stops it from re-running, so a user who later picks Dark by hand
+  // will keep Dark on the next launch.
   const [theme, setTheme] = useState(() => {
     try {
+      const flag = localStorage.getItem('pc_theme_migrated_medium_default');
       const t = localStorage.getItem('pc_theme');
-      return t === 'dark' || t === 'medium' || t === 'light' ? t : 'dark';
-    } catch { return 'dark'; }
+      if (!flag) {
+        localStorage.setItem('pc_theme_migrated_medium_default', '1');
+        if (!t || t === 'dark') {
+          localStorage.setItem('pc_theme', 'medium');
+          return 'medium';
+        }
+      }
+      return t === 'dark' || t === 'medium' || t === 'light' ? t : 'medium';
+    } catch { return 'medium'; }
   });
   useEffect(() => {
     try { localStorage.setItem('pc_theme', theme); } catch { /* ignore */ }
