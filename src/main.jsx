@@ -5,6 +5,7 @@ import App from './App.jsx';
 import AppGate from './AppGate.jsx';
 import Join from './components/Join.jsx';
 import IOSInstallPrompt from './components/IOSInstallPrompt.jsx';
+import AndroidInstallPrompt from './components/AndroidInstallPrompt.jsx';
 import { registerServiceWorker } from './lib/push.js';
 import { AuthProvider } from './lib/auth.jsx';
 import './index.css';
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="*" element={<AppGate />} />
         </Routes>
         <IOSInstallPrompt />
+        <AndroidInstallPrompt />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
