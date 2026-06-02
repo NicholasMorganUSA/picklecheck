@@ -242,6 +242,11 @@ export function useLiveData(enabled) {
     await load();
   }, [load]);
 
+  const leaveGroup = useCallback(async (gid) => {
+    await data.leaveGroup(gid);
+    await load();
+  }, [load]);
+
   const saveGroup = useCallback(async (gid, patch) => {
     // Optimistic: reflect the change in the UI immediately (group fields are DB columns).
     setGroups((prev) => prev.map((g) => (g.id === gid ? { ...g, ...patch } : g)));
@@ -253,5 +258,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, saveGroup, deleteGroup, saveSchedule, generateSessions };
+  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, saveGroup, deleteGroup, leaveGroup, saveSchedule, generateSessions };
 }

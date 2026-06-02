@@ -2191,7 +2191,10 @@ function scheduleSummary(schedule) {
 }
 
 // Read-only view for non-admin members: schedule summary + members list with role badges.
-const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName = MOCK_USER.name }) => (
+const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName = MOCK_USER.name, onLeave }) => {
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  return (
   <div>
     <div className="flex items-center gap-3 pb-4">
       <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: 'var(--bg-glass)' }}>
@@ -2230,10 +2233,25 @@ const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName
         );
       })}
     </SettingsSection>
+    {onLeave && (
+      <button
+        disabled={leaveBusy}
+        onClick={async () => {
+          if (!confirmLeave) { setConfirmLeave(true); return; }
+          setLeaveBusy(true);
+          try { await onLeave(); }
+          catch (e) { setLeaveBusy(false); alert(e.message || 'Could not leave group'); }
+        }}
+        className="w-full py-3 rounded-2xl text-sm font-semibold mb-2 disabled:opacity-60"
+        style={{ background: confirmLeave ? 'rgba(244,63,94,0.22)' : 'rgba(244,63,94,0.10)', color: '#fca5a5', border: '1px solid rgba(244,63,94,0.25)' }}>
+        {leaveBusy ? 'Leaving…' : confirmLeave ? `Tap again to leave ${group?.name || 'this group'}` : 'Leave group'}
+      </button>
+    )}
   </div>
-);
+  );
+};
 
-const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete }) => {
+const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete, onLeave }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
@@ -2246,6 +2264,12 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [confirmDelGroup, setConfirmDelGroup] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  // Only show "Leave group" if there's another admin to keep running it — an
+  // admin leaving as the last admin would orphan the group.
+  const adminCount = (members || []).filter((m) => m.role === 'admin').length;
+  const canLeave = !isDemo && adminCount > 1;
   return (
     <div>
       <div className="flex items-center gap-3 pb-4">
@@ -2353,6 +2377,20 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           <Plus size={13} />Invite member
         </button>
       </SettingsSection>
+      {canLeave && (
+        <button
+          disabled={leaveBusy}
+          onClick={async () => {
+            if (!confirmLeave) { setConfirmLeave(true); return; }
+            setLeaveBusy(true);
+            try { await onLeave?.(); }
+            catch (e) { setLeaveBusy(false); alert(e.message || 'Could not leave group'); }
+          }}
+          className="w-full py-3 rounded-2xl text-sm font-semibold mb-2 disabled:opacity-60"
+          style={{ background: confirmLeave ? 'rgba(244,63,94,0.18)' : 'var(--bg-input)', color: 'var(--text-strong)', border: '1px solid var(--border-medium)' }}>
+          {leaveBusy ? 'Leaving…' : confirmLeave ? `Tap again to leave ${name}` : 'Leave group'}
+        </button>
+      )}
       {!isDemo && (
         <button
           disabled={delBusy}
@@ -2955,6 +2993,7 @@ export default function App({ account = null }) {
                 schedule={live.schedulesByGroup?.[activeGroupId] || null}
                 members={live.membersByGroup?.[activeGroupId] || []}
                 meName={meName}
+                onLeave={async () => { await live.leaveGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
               />
             );
           })()}
@@ -2975,6 +3014,7 @@ export default function App({ account = null }) {
                 onSaveSchedule={(r) => live.saveSchedule(activeGroupId, r)}
                 onGenerateSessions={async (r) => { const s = await live.saveSchedule(activeGroupId, r); return live.generateSessions(activeGroupId, s, ag.horizon ?? 5); }}
                 onDelete={async () => { await live.deleteGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
+                onLeave={async () => { await live.leaveGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
                 update={(patch) => {
                   const db = {};
                   if ('name' in patch) db.name = patch.name;

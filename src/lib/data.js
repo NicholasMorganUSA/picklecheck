@@ -75,6 +75,24 @@ export async function deleteGroup(groupId) {
   if (error) throw error;
 }
 
+// Self-leave: deletes the caller's own RSVPs for this group's sessions first
+// (so the roster shows them gone), then removes their group_members row.
+// RLS lets users delete their own rows in both tables.
+export async function leaveGroup(groupId) {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) throw new Error('Not signed in');
+  const { data: sessions } = await supabase
+    .from('sessions').select('id').eq('group_id', groupId);
+  const sessionIds = (sessions || []).map((s) => s.id);
+  if (sessionIds.length) {
+    await supabase.from('rsvps').delete().eq('user_id', uid).in('session_id', sessionIds);
+  }
+  const { error } = await supabase
+    .from('group_members').delete().eq('group_id', groupId).eq('user_id', uid);
+  if (error) throw error;
+}
+
 // ---- Members --------------------------------------------------------------
 
 export async function listMembers(groupId) {
