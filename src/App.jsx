@@ -1191,7 +1191,7 @@ const GroupsMenu = ({ open, onClose, onManage, onDetails, visibleGroups, setVisi
         )}
         <button onClick={onDiscover} className="w-full mt-2 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
           style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px dashed var(--border-strong)' }}>
-          <Plus size={14} />Discover groups
+          <Plus size={14} />Join with code
         </button>
       </div>
     </div>
@@ -1581,70 +1581,46 @@ const PartySizeModal = ({ control, onConfirm, onClose }) => {
   );
 };
 
-const DiscoverGroupsModal = ({ open, onClose, onJoin, myGroupIds = [] }) => {
-  const real = !!onJoin;
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+// Replaces the old "Discover public groups" search. Type a code → join.
+const DiscoverGroupsModal = ({ open, onClose, onJoinCode }) => {
+  const real = !!onJoinCode;
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [joiningId, setJoiningId] = useState(null);
-  useEffect(() => {
-    if (!open || !real) return;
-    let active = true;
-    setLoading(true); setErr('');
-    const t = setTimeout(() => {
-      searchPublicGroups(query)
-        .then((r) => { if (active) { setResults(r); setLoading(false); } })
-        .catch((e) => { if (active) { setErr(e.message || 'Search failed'); setLoading(false); } });
-    }, 250);
-    return () => { active = false; clearTimeout(t); };
-  }, [query, open, real]);
-  const fakeResults = [
-    { id: 'cinc-1', name: 'Cincinnati Sunday Open Play', location: 'Sawyer Point' },
-    { id: 'cinc-2', name: 'Mason Morning Crew', location: 'Life Time Mason' },
-    { id: 'cinc-3', name: 'West Chester Pickleball', location: 'Voice of America Park' },
-  ].filter((g) => g.name.toLowerCase().includes(query.toLowerCase()));
-  const list = real ? results : fakeResults;
-  const join = async (g) => {
+  useEffect(() => { if (open) { setCode(''); setBusy(false); setErr(''); } }, [open]);
+  const submit = async () => {
     if (!real) return;
-    setJoiningId(g.id); setErr('');
-    try { await onJoin(g.id); onClose(); } catch (e) { setErr(e.message || 'Could not join'); setJoiningId(null); }
+    const ce = validateCodeFormat(code);
+    if (ce) { setErr(ce); return; }
+    setBusy(true); setErr('');
+    try { await onJoinCode(code); onClose(); }
+    catch (e) {
+      const msg = e?.message || 'Could not join';
+      setErr(msg.includes('not found') ? "No group has that code. Double-check with the admin." : msg);
+      setBusy(false);
+    }
   };
   return (
-    <ModalSheet open={open} onClose={onClose} title="Find a group">
+    <ModalSheet open={open} onClose={onClose} title="Join with code">
       <div className="space-y-3 text-sm">
         <div className="text-[11px] text-zinc-500 leading-snug">
-          Search public groups by name. Private groups need an invite link from an admin.
+          Got a group code from a friend or admin? Type it in (case doesn&rsquo;t matter) and you&rsquo;ll be added instantly.
         </div>
-        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name"
-          className="w-full bg-transparent py-2.5 px-3 rounded-lg text-sm"
-          style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} autoFocus />
-        <div className="space-y-2 max-h-80 overflow-y-auto">
-          {real && loading && <div className="text-center text-[11px] text-zinc-500 py-6">Searching…</div>}
-          {!loading && list.length === 0 && <div className="text-center text-[11px] text-zinc-500 py-6">No public groups found.</div>}
-          {!loading && list.map((g) => {
-            const already = myGroupIds.includes(g.id);
-            return (
-              <div key={g.id} className="rounded-xl p-3 flex items-center justify-between gap-2" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
-                  {g.location && <div className="text-[11px] text-zinc-500 truncate">{g.location}</div>}
-                </div>
-                {already ? (
-                  <span className="text-[10px] font-bold tracking-wider px-2.5 py-1.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }}>JOINED</span>
-                ) : (
-                  <button onClick={() => join(g)} disabled={!real || joiningId === g.id}
-                    className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider flex-shrink-0 disabled:opacity-50"
-                    style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
-                    {joiningId === g.id ? 'JOINING…' : 'JOIN'}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Group code</div>
+          <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+            maxLength={32} placeholder="TUE5AM23" autoFocus
+            className="w-full bg-transparent py-3 px-3 rounded-lg text-base"
+            style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none', fontFamily: 'monospace', letterSpacing: '0.1em', textTransform: 'uppercase' }} />
         </div>
-        {err && <div className="text-[11px] text-center" style={{ color: '#fb7185' }}>{err}</div>}
-        {!real && <div className="text-[10px] text-zinc-600 text-center pt-1">Demo — sign in to find and join real groups.</div>}
+        {err && <div className="text-[12px]" style={{ color: '#fb7185' }}>{err}</div>}
+        <button onClick={submit} disabled={!real || busy || !!validateCodeFormat(code)}
+          className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>
+          {busy ? 'Joining…' : 'Join group'}
+        </button>
+        {!real && <div className="text-[10px] text-zinc-600 text-center pt-1">Demo — sign in to join a real group.</div>}
       </div>
     </ModalSheet>
   );
@@ -2194,6 +2170,7 @@ function scheduleSummary(schedule) {
 const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName = MOCK_USER.name, onLeave }) => {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   return (
   <div>
     <div className="flex items-center gap-3 pb-4">
@@ -2213,6 +2190,21 @@ const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName
           <>
             <div className="text-[10px] tracking-wider font-bold uppercase mb-1 mt-3" style={{ color: 'var(--text-tertiary)' }}>Location</div>
             <div className="text-sm" style={{ color: 'var(--text-strong)' }}>{group.location}</div>
+          </>
+        )}
+        {group?.code && (
+          <>
+            <div className="text-[10px] tracking-wider font-bold uppercase mb-1 mt-3" style={{ color: 'var(--text-tertiary)' }}>Group code</div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold" style={{ fontFamily: 'monospace', letterSpacing: '0.08em', color: 'var(--text-strong)' }}>{group.code}</span>
+              <button onClick={() => { navigator.clipboard?.writeText(group.code); setCodeCopied(true); setTimeout(() => setCodeCopied(false), 1500); }}
+                className="text-[11px] font-bold" style={{ color: codeCopied ? '#c5e500' : 'var(--text-secondary)' }}>
+                {codeCopied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <div className="text-[10px] mt-1 leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+              Share with friends — they join at <span style={{ color: 'var(--text-secondary)' }}>picklecheck.in/{group.code}</span>.
+            </div>
           </>
         )}
       </div>
@@ -2251,11 +2243,86 @@ const GroupDetailsView = ({ group, onBack, schedule = null, members = [], meName
   );
 };
 
+// Editable group code with Copy + Generate + Save. Surfaces unique-collision
+// errors from the DB as a friendly inline message.
+const GroupCodeRow = ({ code, onChange }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(code);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  useEffect(() => { setDraft(code); }, [code]);
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/${code}` : `/${code}`;
+  const copy = () => {
+    navigator.clipboard?.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const save = async () => {
+    const ce = validateCodeFormat(draft);
+    if (ce) { setErr(ce); return; }
+    if (draft === code) { setEditing(false); return; }
+    setBusy(true); setErr('');
+    try { await onChange(draft); setEditing(false); }
+    catch (e) {
+      const m = e?.message || 'Could not save';
+      setErr(m.includes('already taken') ? 'That code is already taken — try another.' : m);
+    } finally { setBusy(false); }
+  };
+  if (!editing) {
+    return (
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold" style={{ fontFamily: 'monospace', letterSpacing: '0.08em', color: 'var(--text-strong)' }}>{code}</span>
+          <button onClick={copy} className="text-[11px] font-bold" style={{ color: copied ? '#c5e500' : 'var(--text-secondary)' }}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button onClick={() => setEditing(true)} className="text-[11px] font-bold" style={{ color: 'var(--text-secondary)' }}>Edit</button>
+          {!confirmRegen ? (
+            <button onClick={() => setConfirmRegen(true)} className="text-[11px] font-bold ml-auto" style={{ color: 'var(--text-tertiary)' }}>Regenerate</button>
+          ) : (
+            <span className="ml-auto flex items-center gap-2 text-[11px]">
+              <button onClick={async () => { setBusy(true); setErr(''); try { await onChange(generateGroupCode()); setConfirmRegen(false); } catch (e) { setErr(e?.message || 'Could not regenerate'); } finally { setBusy(false); } }}
+                disabled={busy} className="font-bold" style={{ color: '#fb7185' }}>{busy ? '…' : 'Confirm regen'}</button>
+              <button onClick={() => setConfirmRegen(false)} style={{ color: 'var(--text-tertiary)' }}>Cancel</button>
+            </span>
+          )}
+        </div>
+        {err && <div className="text-[11px] mt-1.5" style={{ color: '#fb7185' }}>{err}</div>}
+        <div className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+          Share this code — or the link <span style={{ color: 'var(--text-secondary)' }}>{url}</span> — and people join instantly.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="px-4 py-3 space-y-2">
+      <input type="text" value={draft} onChange={(e) => setDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+        maxLength={32} autoFocus
+        className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
+        style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none', fontFamily: 'monospace', letterSpacing: '0.06em', textTransform: 'uppercase' }} />
+      <div className="flex gap-2">
+        <button onClick={save} disabled={busy}
+          className="flex-1 py-2 rounded-lg text-[12px] font-bold disabled:opacity-50"
+          style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Saving…' : 'Save code'}</button>
+        <button onClick={() => setDraft(generateGroupCode())}
+          className="px-3 py-2 rounded-lg text-[11px] font-bold"
+          style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-medium)' }}>Generate</button>
+        <button onClick={() => { setEditing(false); setDraft(code); setErr(''); }}
+          className="px-3 py-2 rounded-lg text-[11px] font-bold"
+          style={{ background: 'transparent', color: 'var(--text-tertiary)' }}>Cancel</button>
+      </div>
+      {err && <div className="text-[11px]" style={{ color: '#fb7185' }}>{err}</div>}
+    </div>
+  );
+};
+
 const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete, onLeave }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
-  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false, autoCancelWindow = null, autoCancelMin = 4, lastminuteWindow = null } = s;
+  const { name, location, allowAdhoc, isPublic, horizon = 4, allowMemberInvites = false, autoCancelWindow = null, autoCancelMin = 4, lastminuteWindow = null, code = '' } = s;
   const memberList = members ?? [
     { full_name: 'Pickleballer', role: 'admin' }, { full_name: 'Devin Smith', role: 'member' },
     { full_name: 'Aaron Tucker', role: 'member' }, { full_name: 'Sara Klein', role: 'member' }, { full_name: 'Jay Pickett', role: 'member' },
@@ -2286,8 +2353,12 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
       <SettingsSection title="Group">
         <EditableRow label="Name" value={name} onSave={(v) => update({ name: v })} />
         <EditableRow label="Location" value={location} onSave={(v) => update({ location: v })} />
-        <ToggleRow label="Public group" sub={isPublic ? 'Searchable in Discover Groups' : 'Invite only · share URL or email'} on={isPublic} onChange={(v) => update({ isPublic: v })} />
       </SettingsSection>
+      {!isDemo && code && (
+        <SettingsSection title="Group code">
+          <GroupCodeRow code={code} onChange={(c) => update({ code: c })} />
+        </SettingsSection>
+      )}
       <SettingsSection title="Schedule">
         {isDemo ? (
           <div className="px-4 py-4 text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
@@ -2544,22 +2615,44 @@ const EmptyState = ({ title, body, cta, onCta, cta2, onCta2 }) => (
   </div>
 );
 
+// Random uppercase-alphanumeric code generator (used by Create + Settings).
+const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function generateGroupCode(len = 8) {
+  let result = '';
+  for (let i = 0; i < len; i++) result += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  return result;
+}
+function validateCodeFormat(code) {
+  if (!code || code.length < 8) return 'Code must be at least 8 characters.';
+  if (!/^[A-Z0-9]+$/.test(code)) return 'Code can only contain letters and digits.';
+  return null;
+}
+
 const CreateGroupModal = ({ open, onClose, onCreate }) => {
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  useEffect(() => { if (open) { setName(''); setLocation(''); setErr(null); setBusy(false); } }, [open]);
+  useEffect(() => {
+    if (open) {
+      setName(''); setLocation(''); setCode(generateGroupCode());
+      setErr(null); setBusy(false);
+    }
+  }, [open]);
+  const codeErr = code && validateCodeFormat(code);
   const submit = async () => {
     if (!name.trim()) return;
+    const ce = validateCodeFormat(code);
+    if (ce) { setErr(ce); return; }
     setBusy(true); setErr(null);
-    try { await onCreate({ name: name.trim(), location: location.trim() || null }); onClose(); }
+    try { await onCreate({ name: name.trim(), location: location.trim() || null, code }); onClose(); }
     catch (e) { setErr(e.message || 'Could not create group'); setBusy(false); }
   };
   return (
     <ModalSheet open={open} onClose={onClose} title="Create a group">
       <div className="space-y-3 text-sm">
-        <div className="text-[11px] text-zinc-500 leading-snug">Your recurring crew. You&rsquo;ll be the admin and can invite players with a link.</div>
+        <div className="text-[11px] text-zinc-500 leading-snug">Your recurring crew. You&rsquo;ll be the admin. Share the code below so others can join.</div>
         <label className="block">
           <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Group name</div>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sunday Doubles" autoFocus
@@ -2572,8 +2665,26 @@ const CreateGroupModal = ({ open, onClose, onCreate }) => {
             className="w-full bg-transparent py-2 px-2.5 rounded-lg text-sm"
             style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
         </label>
+        <div>
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1 uppercase">Group code · 8+ letters/digits</div>
+          <div className="flex gap-2">
+            <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              maxLength={32} placeholder="TUE5AM23"
+              className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-sm"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none', fontFamily: 'monospace', letterSpacing: '0.06em', textTransform: 'uppercase' }} />
+            <button type="button" onClick={() => setCode(generateGroupCode())}
+              className="px-3 py-2 rounded-lg text-[11px] font-bold"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-medium)' }}>
+              Generate
+            </button>
+          </div>
+          {codeErr && <div className="text-[11px] mt-1" style={{ color: '#fb7185' }}>{codeErr}</div>}
+          <div className="text-[10px] mt-1 leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+            People join by typing this code or visiting <span style={{ color: 'var(--text-secondary)' }}>picklecheck.in/{code || 'YOURCODE'}</span>.
+          </div>
+        </div>
         {err && <div className="text-[12px]" style={{ color: '#fb7185' }}>{err}</div>}
-        <button onClick={submit} disabled={!name.trim() || busy}
+        <button onClick={submit} disabled={!name.trim() || !!codeErr || busy}
           className="w-full py-3 rounded-2xl text-sm font-bold disabled:opacity-40 mt-1"
           style={{ background: '#c5e500', color: '#1a1f00' }}>{busy ? 'Creating…' : 'Create group'}</button>
       </div>
@@ -3002,7 +3113,7 @@ export default function App({ account = null }) {
           ) : (() => {
             const ag = (live.groups || []).find(g => g.id === activeGroupId);
             if (!ag) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Group not found.</div>;
-            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites, autoCancelWindow: ag.auto_cancel_minutes_before, autoCancelMin: ag.auto_cancel_min_players, lastminuteWindow: ag.lastminute_window_minutes };
+            const realSettings = { name: ag.name, location: ag.location || '', allowAdhoc: ag.allow_adhoc, isPublic: ag.is_public, horizon: ag.horizon ?? 5, schedule: [], allowMemberInvites: ag.allow_member_invites, autoCancelWindow: ag.auto_cancel_minutes_before, autoCancelMin: ag.auto_cancel_min_players, lastminuteWindow: ag.lastminute_window_minutes, code: ag.code };
             return (
               <GroupSettingsView
                 groupId={activeGroupId}
@@ -3026,6 +3137,7 @@ export default function App({ account = null }) {
                   if ('autoCancelWindow' in patch) db.auto_cancel_minutes_before = patch.autoCancelWindow;
                   if ('autoCancelMin' in patch) db.auto_cancel_min_players = patch.autoCancelMin;
                   if ('lastminuteWindow' in patch) db.lastminute_window_minutes = patch.lastminuteWindow;
+                  if ('code' in patch) db.code = patch.code;
                   if (Object.keys(db).length) live.saveGroup(activeGroupId, db);
                 }}
               />
@@ -3046,7 +3158,7 @@ export default function App({ account = null }) {
         members={addInstanceFor ? (live.membersByGroup?.[addInstanceFor] || []) : []}
         onClose={() => setAddInstanceFor(null)} onCreate={isDemo ? null : live.createSession} />
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
-        onJoin={isDemo ? null : live.joinGroup} myGroupIds={(live.groups || []).map((g) => g.id)} />
+        onJoinCode={isDemo ? null : live.joinByCode} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
       <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen} />

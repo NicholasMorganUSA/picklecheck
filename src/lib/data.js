@@ -25,16 +25,26 @@ export async function listMyGroups() {
     .map((r) => ({ ...r.group, role: r.role }));
 }
 
-export async function createGroup({ name, location = null, isPublic = false, allowAdhoc = true, horizon = 5 }) {
+export async function createGroup({ name, location = null, isPublic = false, allowAdhoc = true, horizon = 5, code }) {
   const { data, error } = await supabase.rpc('create_group', {
     p_name: name,
     p_location: location,
     p_is_public: isPublic,
     p_allow_adhoc: allowAdhoc,
     p_horizon: horizon,
+    p_code: code,
   });
   if (error) throw error;
   return data;
+}
+
+// Look up a group by its short code and join as a member. SECURITY DEFINER on
+// the server so non-members can resolve the code despite RLS hiding the group.
+// Idempotent — no-op if already a member.
+export async function joinByCode(code) {
+  const { data, error } = await supabase.rpc('join_by_code', { p_code: code });
+  if (error) throw error;
+  return data; // group_id
 }
 
 // Public groups for the Discover flow (RLS allows anyone to read is_public groups).
