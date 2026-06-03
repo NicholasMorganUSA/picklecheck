@@ -2476,72 +2476,37 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           {delBusy ? 'Deleting…' : confirmDelGroup ? 'Tap again to permanently delete this group' : 'Delete group'}
         </button>
       )}
-      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} groupId={groupId} real={!isDemo} />
+      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} groupName={name} groupCode={code} real={!isDemo} />
     </div>
   );
 };
 
-const InviteMemberModal = ({ open, onClose, groupName, groupId, real = false }) => {
-  const [email, setEmail] = useState('');
-  const [link, setLink] = useState('');
-  const [genLoading, setGenLoading] = useState(false);
-  const [genErr, setGenErr] = useState('');
+const InviteMemberModal = ({ open, onClose, groupName, groupCode, real = false }) => {
   const [copied, setCopied] = useState(false);
-  useEffect(() => { if (!open) { setLink(''); setGenErr(''); setEmail(''); setCopied(false); } }, [open]);
-  const generate = async () => {
-    setGenLoading(true); setGenErr('');
-    try { const inv = await createInvite(groupId); setLink(inviteUrl(inv.token)); }
-    catch (e) { setGenErr(e.message || 'Could not create link'); }
-    setGenLoading(false);
-  };
-  const fakeLink = `https://picklecheck.in/join/${(groupName || '').toLowerCase().replace(/\s+/g, '-')}`;
-  const shownLink = real ? link : fakeLink;
-  // Ready-to-paste invite (group name + one-line blurb + link).
-  const message = `Hey! You're invited to join ${groupName || 'our group'} on PickleCheck 🎾 — it shows who's IN for each pickleball session so you know before you go. Join here: ${shownLink}`;
+  useEffect(() => { if (!open) setCopied(false); }, [open]);
+  const code = groupCode || 'YOURCODE';
+  const link = typeof window !== 'undefined' ? `${window.location.origin}/${code}` : `https://picklecheck.in/${code}`;
+  // Ready-to-paste invite — group name + one-line blurb + the new code URL.
+  const message = `Hey! You're invited to join ${groupName || 'our group'} on PickleCheck 🎾 — it shows who's IN for each pickleball session so you know before you go. Join here: ${link}`;
   const copyMsg = () => { navigator.clipboard?.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   return (
     <ModalSheet open={open} onClose={onClose} title="Invite member">
       <div className="space-y-3 text-sm">
         <div>
-          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Share invite link</div>
-          {real && !link ? (
-            <button onClick={generate} disabled={genLoading}
-              className="w-full py-2.5 rounded-lg text-[12px] font-bold disabled:opacity-50"
-              style={{ background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
-              {genLoading ? 'Generating…' : 'Generate invite link'}
+          <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Share invite message</div>
+          <div className="space-y-2">
+            <textarea readOnly value={message} rows={4}
+              className="w-full bg-transparent py-2 px-2.5 rounded-lg text-xs leading-snug resize-none"
+              style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
+            <button onClick={copyMsg} className="w-full py-2.5 rounded-lg text-[12px] font-bold transition-colors"
+              style={copied
+                ? { background: '#c5e500', color: '#1a1f00', border: '1px solid #c5e500' }
+                : { background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
+              {copied ? 'Copied! Paste it in your group chat' : 'Copy invite message'}
             </button>
-          ) : (
-            <div className="space-y-2">
-              <textarea readOnly value={message} rows={4}
-                className="w-full bg-transparent py-2 px-2.5 rounded-lg text-xs leading-snug resize-none"
-                style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
-              <button onClick={copyMsg} className="w-full py-2.5 rounded-lg text-[12px] font-bold transition-colors"
-                style={copied
-                  ? { background: '#c5e500', color: '#1a1f00', border: '1px solid #c5e500' }
-                  : { background: 'rgba(197,229,0,0.15)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.3)' }}>
-                {copied ? 'Copied! Paste it in your group chat' : 'Copy invite message'}
-              </button>
-            </div>
-          )}
-          {genErr && <div className="text-[11px] mt-1" style={{ color: '#fb7185' }}>{genErr}</div>}
-          {real && <div className="text-[10px] text-zinc-600 mt-1.5">Anyone who taps the link can join after signing in.</div>}
+          </div>
+          {real && <div className="text-[10px] text-zinc-600 mt-1.5">Anyone who taps the link (or types the code) joins after signing in.</div>}
         </div>
-        {!real && (
-          <>
-            <div className="text-center text-[10px] text-zinc-600 my-2">— OR —</div>
-            <div>
-              <div className="text-[10px] tracking-wider text-zinc-500 font-bold mb-1.5 uppercase">Email invitation</div>
-              <div className="flex gap-2">
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com"
-                  className="flex-1 bg-transparent py-2 px-2.5 rounded-lg text-sm"
-                  style={{ color: 'var(--text-strong)', border: '1px solid var(--border-strong)', outline: 'none' }} />
-                <button disabled={!email.includes('@')} onClick={() => { setEmail(''); onClose(); }}
-                  className="px-3 py-2 rounded-lg text-[11px] font-bold disabled:opacity-40" style={{ background: '#c5e500', color: '#1a1f00' }}>Send</button>
-              </div>
-            </div>
-            <div className="text-[10px] text-zinc-600 text-center pt-1">Prototype — email send is a stub.</div>
-          </>
-        )}
       </div>
     </ModalSheet>
   );
@@ -3180,7 +3145,7 @@ export default function App({ account = null }) {
           return g;
         }} />
       <InviteMemberModal open={!!inviteForGroup} onClose={() => setInviteForGroup(null)}
-        groupName={inviteForGroup ? groupInfo[inviteForGroup]?.name : ''} groupId={inviteForGroup} real={!isDemo} />
+        groupName={inviteForGroup ? groupInfo[inviteForGroup]?.name : ''} groupCode={inviteForGroup ? groupInfo[inviteForGroup]?.code : ''} real={!isDemo} />
       <EditInstanceModal session={editSession} onClose={() => setEditSession(null)}
         onSave={(patch) => live.updateSession(editSession.id, patch)} />
     </div>
