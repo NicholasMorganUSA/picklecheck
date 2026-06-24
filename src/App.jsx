@@ -1768,8 +1768,18 @@ const PushControl = () => {
   );
 };
 
-const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOpenTutorial }) => {
-  const { name, email, remind24, remind3, lockIn, summary } = settings;
+// Text-size steps. `scale` feeds the global --fs CSS variable; the small "A" in
+// the picker previews the relative size. Default (1) is the unchanged baseline.
+const FONT_SIZES = [
+  { scale: 0.9,  label: 'Small' },
+  { scale: 1,    label: 'Default' },
+  { scale: 1.15, label: 'Large' },
+  { scale: 1.3,  label: 'Larger' },
+  { scale: 1.5,  label: 'Largest' },
+];
+
+const SettingsView = ({ onBack, settings, update, theme, setTheme, fontScale, setFontScale, account, onOpenTutorial, onOutRangeAdded }) => {
+  const { name, email } = settings;
   // In the real app, profile name/email come from the signed-in account.
   const displayName = account?.name ?? name;
   const displayEmail = account?.email ?? email;
@@ -1783,7 +1793,13 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOp
   useEffect(() => { if (account) listOutRanges().then(setOutRanges).catch(() => {}); }, [account]);
   const addRange = async () => {
     if (!newStart || !newEnd) return;
-    try { await addOutRange({ start: newStart, end: newEnd, reason: newReason || null }); setOutRanges(await listOutRanges()); }
+    try {
+      await addOutRange({ start: newStart, end: newEnd, reason: newReason || null });
+      setOutRanges(await listOutRanges());
+      // Re-run the live load so sessions in the new range flip to OUT right away,
+      // instead of waiting for the next app open / nightly cron.
+      onOutRangeAdded?.();
+    }
     catch (e) { console.warn('[out-range] add failed:', e); }
     setNewStart(''); setNewEnd(''); setNewReason(''); setAdding(false);
   };
@@ -1823,10 +1839,6 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOp
       </SettingsSection>
       <SettingsSection title="Notifications">
         <PushControl />
-        <ToggleRow label="Night-before reminder" sub="24 hours before session" on={remind24} onChange={(v) => update({ remind24: v })} />
-        <ToggleRow label="3-hour reminder" sub="For unconfirmed sessions" on={remind3} onChange={(v) => update({ remind3: v })} />
-        <ToggleRow label="Lock-in nudge" sub="If you're MAYBE the night before" on={lockIn} onChange={(v) => update({ lockIn: v })} />
-        <ToggleRow label="Confirmation summary" sub="Even when you've checked in" on={summary} onChange={(v) => update({ summary: v })} />
       </SettingsSection>
       <SettingsSection title="Auto-out">
         <div className="px-4 pt-3 pb-2 text-[11px] text-zinc-400 leading-snug">
@@ -1866,6 +1878,30 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, account, onOp
         )}
       </SettingsSection>
       <SettingsSection title="App">
+        <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+          <div className="text-sm font-medium" style={{ color: 'var(--text-strong)' }}>Text size</div>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            {(FONT_SIZES.find((f) => f.scale === fontScale) || FONT_SIZES[1]).label}
+          </div>
+        </div>
+        <div className="px-4 pb-1.5 flex items-center gap-1.5">
+          {FONT_SIZES.map((o) => {
+            const sel = o.scale === fontScale;
+            return (
+              <button key={o.scale} onClick={() => setFontScale?.(o.scale)} aria-label={o.label}
+                className="flex-1 rounded-lg flex items-center justify-center font-bold"
+                style={{
+                  height: 40, lineHeight: 1, fontSize: `${Math.round(11 * o.scale)}px`,
+                  background: sel ? 'rgba(197,229,0,0.14)' : 'var(--bg-subtle)',
+                  border: sel ? '1px solid rgba(197,229,0,0.4)' : '1px solid var(--border-subtle)',
+                  color: sel ? '#c5e500' : 'var(--text-secondary)',
+                }}>A</button>
+            );
+          })}
+        </div>
+        <div className="px-4 pb-3 text-[11px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+          Enlarges names, labels and details across the app for easier reading.
+        </div>
         <SettingsRow label="Theme" value={theme === 'light' ? 'Light' : theme === 'medium' ? 'Medium' : theme === 'system' ? 'System' : 'Dark'} action onClick={() => setThemeOpen(true)} />
         <SettingsRow label="Tutorial" value="Replay the tour" action onClick={() => onOpenTutorial?.()} />
         <SettingsRow label="About" action />
@@ -2690,10 +2726,6 @@ export default function App({ account = null }) {
   const [userSettings, setUserSettings] = useState({
     name: account?.name || MOCK_USER.name,
     email: account?.email || MOCK_USER.email,
-    remind24: true,
-    remind3: true,
-    lockIn: true,
-    summary: false,
     outRanges: [{ id: 1, start: '2026-05-28', end: '2026-06-03', reason: 'Vacation' }],
   });
   const updateUserSettings = (patch) => setUserSettings(s => ({ ...s, ...patch }));
@@ -2724,6 +2756,14 @@ export default function App({ account = null }) {
   useEffect(() => {
     try { localStorage.setItem('pc_theme', theme); } catch { /* ignore */ }
   }, [theme]);
+  // Global text-size multiplier (--fs). Persisted like theme; default 1 = unchanged.
+  const [fontScale, setFontScale] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem('pc_font_scale')); return v >= 0.8 && v <= 1.6 ? v : 1; }
+    catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pc_font_scale', String(fontScale)); } catch { /* ignore */ }
+  }, [fontScale]);
   // Group settings keyed by groupId — also lifted for persistence
   const [groupSettingsMap, setGroupSettingsMap] = useState(() => {
     const m = {};
@@ -2954,6 +2994,7 @@ export default function App({ account = null }) {
     <div className={`min-h-screen relative overflow-hidden theme-${theme}`}
       style={{
         ...THEME[theme],
+        '--fs': fontScale,
         background: 'var(--bg-app)',
         color: 'var(--text-strong)',
         backgroundImage: `
@@ -2965,6 +3006,22 @@ export default function App({ account = null }) {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         body, html { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        /* User text-size control: scale every text utility by --fs (set on the app
+           root). Large inline-sized headers (the session time, brand mark) use raw
+           px and are intentionally left untouched. Inputs stay >=16px so iOS doesn't
+           zoom on focus. var fallback keeps things sane if --fs is ever unset. */
+        .text-\\[9px\\]  { font-size: calc(9px  * var(--fs, 1)); }
+        .text-\\[10px\\] { font-size: calc(10px * var(--fs, 1)); }
+        .text-\\[11px\\] { font-size: calc(11px * var(--fs, 1)); }
+        .text-\\[12px\\] { font-size: calc(12px * var(--fs, 1)); }
+        .text-\\[13px\\] { font-size: calc(13px * var(--fs, 1)); }
+        .text-xs   { font-size: calc(0.75rem  * var(--fs, 1)); }
+        .text-sm   { font-size: calc(0.875rem * var(--fs, 1)); }
+        .text-base { font-size: calc(1rem     * var(--fs, 1)); }
+        .text-lg   { font-size: calc(1.125rem * var(--fs, 1)); }
+        .text-xl   { font-size: calc(1.25rem  * var(--fs, 1)); }
+        .text-2xl  { font-size: calc(1.5rem   * var(--fs, 1)); }
+        input, select, textarea { font-size: 16px !important; }
         /* Light-theme overrides for Tailwind color utilities used throughout the app.
            Inline styles already reference --text-* / --bg-* CSS vars; this block handles
            the remaining className-based color references. */
@@ -3057,7 +3114,7 @@ export default function App({ account = null }) {
           {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
           {view === 'settings' && (isDemo
             ? <DemoSettings onBack={() => setView('today')} onOpenTutorial={() => setTutorialOpen(true)} />
-            : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} account={account} onOpenTutorial={() => setTutorialOpen(true)} />
+            : <SettingsView onBack={() => setView('today')} settings={userSettings} update={updateUserSettings} theme={theme} setTheme={setTheme} fontScale={fontScale} setFontScale={setFontScale} account={account} onOpenTutorial={() => setTutorialOpen(true)} onOutRangeAdded={live.reload} />
           )}
           {view === 'group-details' && !isDemo && (() => {
             const ag = (live.groups || []).find((g) => g.id === activeGroupId);
