@@ -6,6 +6,7 @@ import { getPushState, enablePush, refreshSubscription } from "./lib/push.js";
 import { sendTestPush, notifyDropout } from "./lib/notify.js";
 import TutorialModal from "./components/TutorialModal.jsx";
 import NotificationsPromptModal from "./components/NotificationsPromptModal.jsx";
+import WhatsNewModal, { WHATS_NEW } from "./components/WhatsNewModal.jsx";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -2734,6 +2735,7 @@ export default function App({ account = null }) {
   const [partyModal, setPartyModal] = useState(null); // { targetStatus, initialSize } | null
   const [dropoutConfirm, setDropoutConfirm] = useState(null); // { targetStatus, sessionId } | null
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   // Persisted in localStorage so it survives backgrounding / reload.
   // One-time migration: anyone whose stored theme is 'dark' (or unset) at
   // first load after this deploy gets bumped to 'medium' (the new default).
@@ -2984,6 +2986,26 @@ export default function App({ account = null }) {
     } catch { /* ignore */ }
   }, [isDemo]);
 
+  // One-time "What's New" announcement (real app only). Existing users see the
+  // current note once; brand-new users get the tutorial instead, so we mark the
+  // note seen for them to avoid doubling up. Bump WHATS_NEW.id to re-announce.
+  useEffect(() => {
+    if (isDemo || !account) return;
+    try {
+      const isNewUser = !localStorage.getItem('pc_app_tutorial_v2');
+      if (isNewUser) { localStorage.setItem('pc_whatsnew_seen', WHATS_NEW.id); return; }
+      if (localStorage.getItem('pc_whatsnew_seen') !== WHATS_NEW.id) {
+        const t = setTimeout(() => setWhatsNewOpen(true), 800);
+        return () => clearTimeout(t);
+      }
+    } catch { /* ignore */ }
+  }, [isDemo, account]);
+
+  const closeWhatsNew = () => {
+    setWhatsNewOpen(false);
+    try { localStorage.setItem('pc_whatsnew_seen', WHATS_NEW.id); } catch { /* ignore */ }
+  };
+
   const closeTutorial = () => {
     setTutorialOpen(false);
     const key = isDemo ? 'pc_demo_tutorial_v2' : 'pc_app_tutorial_v2';
@@ -3183,7 +3205,8 @@ export default function App({ account = null }) {
         onJoinCode={isDemo ? null : live.joinByCode} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
       <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
-      <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen} />
+      <WhatsNewModal open={whatsNewOpen} onClose={closeWhatsNew} />
+      <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen && !whatsNewOpen} />
       <DropoutConfirmModal
         control={dropoutConfirm}
         onClose={() => setDropoutConfirm(null)}
