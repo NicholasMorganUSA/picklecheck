@@ -27,21 +27,25 @@ export default async function handler(req, res) {
 
     const countOf = async (q) => (await q).count || 0;
 
-    const [groups, users, memberships, newUsers7, upcoming, signupDates] = await Promise.all([
+    const datesOf = (q) => q.then(({ data }) => (data || []).map((r) => r.created_at));
+
+    const [groups, users, memberships, newUsers7, upcoming, signupDates, groupDates, memberDates, rsvpRows] = await Promise.all([
       countOf(db.from('groups').select('*', { count: 'exact', head: true })),
       countOf(db.from('profiles').select('*', { count: 'exact', head: true })),
       countOf(db.from('group_members').select('*', { count: 'exact', head: true })),
       countOf(db.from('profiles').select('*', { count: 'exact', head: true }).gte('created_at', cutoff7)),
       countOf(db.from('sessions').select('*', { count: 'exact', head: true }).is('cancelled_at', null).gte('starts_at', nowIso)),
-      db.from('profiles').select('created_at').order('created_at', { ascending: true }).then(({ data }) => (data || []).map((r) => r.created_at)),
+      datesOf(db.from('profiles').select('created_at')),
+      datesOf(db.from('groups').select('created_at')),
+      datesOf(db.from('group_members').select('created_at')),
+      db.from('rsvps').select('user_id, updated_at').then(({ data }) => data || []),
     ]);
 
     // Active = distinct users who set/changed an RSVP in the window.
-    const distinctRsvpUsers = async (since) => {
-      const { data } = await db.from('rsvps').select('user_id').gte('updated_at', since);
-      return new Set((data || []).map((r) => r.user_id)).size;
-    };
-    const [active7, active30] = await Promise.all([distinctRsvpUsers(cutoff7), distinctRsvpUsers(cutoff30)]);
+    const distinctRsvpUsers = (since) =>
+      new Set(rsvpRows.filter((r) => r.updated_at >= since).map((r) => r.user_id)).size;
+    const active7 = distinctRsvpUsers(cutoff7);
+    const active30 = distinctRsvpUsers(cutoff30);
 
     const avgGroupSize = groups ? memberships / groups : 0;
 
@@ -57,7 +61,7 @@ export default async function handler(req, res) {
     const updated = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
     const body = `
       <div class="grid">${cards}</div>
-      ${growthChart(signupDates)}
+      ${metricCharts({ signupDates, groupDates, memberDates, rsvpRows })}
       <p class="foot">Updated ${updated} · server time</p>`;
 
     res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -70,38 +74,113 @@ export default async function handler(req, res) {
   }
 }
 
-// Cumulative user-growth line chart, rendered as inline SVG. Buckets signups
-// by day from the first signup to today so the x-axis is time-proportional.
-function growthChart(signupDates) {
-  const dates = (signupDates || []).map((d) => new Date(d)).filter((d) => !isNaN(d)).sort((a, b) => a - b);
-  if (dates.length < 2) {
-    return `<div class="chart"><div class="chart-head">User growth</div>
-      <p class="sub" style="margin-top:8px">Not enough signups yet to chart.</p></div>`;
+// Multi-metric time-series widget: a row of tabs over a single chart area,
+// each tab an inline SVG. All series share one daily x-domain (first event to
+// today) so switching tabs keeps the timeline aligned. No dependencies; the
+// tab toggle is a tiny inline script.
+function metricCharts({ signupDates, groupDates, memberDates, rsvpRows }) {
+  const toDays = (arr) => (arr || [])
+    .map((d) => new Date(d).getTime())
+    .filter((t) => !isNaN(t))
+    .map((t) => Math.floor(t / DAY));
+
+  const signupD = toDays(signupDates);
+  const groupD = toDays(groupDates);
+  const memberD = toDays(memberDates);
+  const rsvpD = (rsvpRows || [])
+    .map((r) => ({ day: Math.floor(new Date(r.updated_at).getTime() / DAY), user: r.user_id }))
+    .filter((r) => !isNaN(r.day));
+
+  const firsts = [signupD, groupD, memberD, rsvpD.map((r) => r.day)]
+    .map((a) => (a.length ? Math.min(...a) : Infinity))
+    .filter((v) => isFinite(v));
+  if (!firsts.length) {
+    return `<div class="chart"><div class="chart-head">Trends</div>
+      <p class="sub" style="margin-top:8px">No data to chart yet.</p></div>`;
   }
 
-  const startDay = Math.floor(dates[0].getTime() / DAY);
+  const startDay = Math.min(...firsts);
   const endDay = Math.floor(Date.now() / DAY);
   const days = Math.max(1, endDay - startDay);
 
-  // Cumulative total at the end of each day.
-  const cumulative = new Array(days + 1).fill(0);
-  for (const d of dates) {
-    const idx = Math.min(days, Math.max(0, Math.floor(d.getTime() / DAY) - startDay));
-    cumulative[idx] += 1;
-  }
-  for (let i = 1; i < cumulative.length; i++) cumulative[i] += cumulative[i - 1];
+  // Cumulative running total, indexed by day offset from startDay.
+  const cumulative = (dayList) => {
+    const arr = new Array(days + 1).fill(0);
+    for (const d of dayList) {
+      const idx = Math.min(days, Math.max(0, d - startDay));
+      arr[idx] += 1;
+    }
+    for (let i = 1; i < arr.length; i++) arr[i] += arr[i - 1];
+    return arr;
+  };
 
+  // Rolling count of distinct RSVP users over the trailing `window` days.
+  const rollingActive = (window) => {
+    const buckets = Array.from({ length: days + 1 }, () => new Set());
+    for (const r of rsvpD) {
+      const idx = r.day - startDay;
+      if (idx >= 0 && idx <= days) buckets[idx].add(r.user);
+    }
+    const out = new Array(days + 1).fill(0);
+    for (let i = 0; i <= days; i++) {
+      const seen = new Set();
+      for (let j = Math.max(0, i - window + 1); j <= i; j++) {
+        for (const u of buckets[j]) seen.add(u);
+      }
+      out[i] = seen.size;
+    }
+    return out;
+  };
+
+  const metrics = [
+    { key: 'users', label: 'Users', sub: 'cumulative signups', series: cumulative(signupD) },
+    { key: 'groups', label: 'Groups', sub: 'cumulative groups', series: cumulative(groupD) },
+    { key: 'members', label: 'Memberships', sub: 'cumulative memberships', series: cumulative(memberD) },
+    { key: 'active', label: 'Active / week', sub: 'distinct RSVPs · trailing 7 days', series: rollingActive(7) },
+  ];
+
+  const tabs = metrics
+    .map((m, i) => `<button type="button" class="chart-tab${i === 0 ? ' active' : ''}" data-tab="${m.key}">${m.label}</button>`)
+    .join('');
+  const panels = metrics
+    .map((m, i) => `<div class="chart-panel" data-metric="${m.key}"${i === 0 ? '' : ' hidden'}>${chartSvg(m, startDay, days)}</div>`)
+    .join('');
+
+  return `
+    <div class="chart">
+      <div class="chart-tabs">${tabs}</div>
+      <div class="chart-panels">${panels}</div>
+    </div>
+    <script>
+      (function () {
+        var tabs = document.querySelectorAll('.chart-tab');
+        var panels = document.querySelectorAll('.chart-panel');
+        tabs.forEach(function (t) {
+          t.addEventListener('click', function () {
+            var k = t.getAttribute('data-tab');
+            tabs.forEach(function (x) { x.classList.toggle('active', x === t); });
+            panels.forEach(function (p) { p.hidden = p.getAttribute('data-metric') !== k; });
+          });
+        });
+      })();
+    </script>`;
+}
+
+// One metric's SVG: line + gradient area, y gridlines, and start/mid/end date
+// labels. `series` is a per-day array over [startDay, startDay + days].
+function chartSvg(metric, startDay, days) {
+  const { series, label, sub } = metric;
   const W = 700, H = 220, padL = 40, padR = 16, padT = 16, padB = 28;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const maxY = cumulative[cumulative.length - 1] || 1;
+  const maxY = Math.max(1, ...series);
   const x = (i) => padL + (days === 0 ? 0 : (i / days) * plotW);
-  const y = (v) => padT + plotH - (maxY === 0 ? 0 : (v / maxY) * plotH);
+  const y = (v) => padT + plotH - (v / maxY) * plotH;
 
-  const pts = cumulative.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const pts = series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
   const line = `M${pts.join(' L')}`;
   const area = `M${x(0).toFixed(1)},${y(0).toFixed(1)} L${pts.join(' L')} L${x(days).toFixed(1)},${y(0).toFixed(1)} Z`;
 
-  // Horizontal gridlines + y labels (4 steps).
+  // Horizontal gridlines + y labels (4 steps, integer ticks).
   const steps = 4;
   let grid = '';
   for (let s = 0; s <= steps; s++) {
@@ -111,34 +190,32 @@ function growthChart(signupDates) {
     grid += `<text x="${padL - 8}" y="${(+gy + 3).toFixed(1)}" text-anchor="end" class="axis">${v}</text>`;
   }
 
-  // X labels: first date, midpoint, today.
-  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const midDate = new Date((dates[0].getTime() + Date.now()) / 2);
+  const fmt = (ms) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const startMs = startDay * DAY, nowMs = Date.now();
   const xlabels = [
-    `<text x="${padL}" y="${H - 8}" text-anchor="start" class="axis">${fmt(dates[0])}</text>`,
-    `<text x="${(padL + W - padR) / 2}" y="${H - 8}" text-anchor="middle" class="axis">${fmt(midDate)}</text>`,
-    `<text x="${W - padR}" y="${H - 8}" text-anchor="end" class="axis">${fmt(new Date())}</text>`,
+    `<text x="${padL}" y="${H - 8}" text-anchor="start" class="axis">${fmt(startMs)}</text>`,
+    `<text x="${(padL + W - padR) / 2}" y="${H - 8}" text-anchor="middle" class="axis">${fmt((startMs + nowMs) / 2)}</text>`,
+    `<text x="${W - padR}" y="${H - 8}" text-anchor="end" class="axis">${fmt(nowMs)}</text>`,
   ].join('');
 
-  const lastX = x(days).toFixed(1), lastY = y(maxY).toFixed(1);
+  const gid = `fill-${metric.key}`;
+  const lastX = x(days).toFixed(1), lastY = y(series[series.length - 1]).toFixed(1);
 
   return `
-    <div class="chart">
-      <div class="chart-head">User growth <span class="chart-sub">${maxY} total · cumulative signups</span></div>
-      <svg viewBox="0 0 ${W} ${H}" class="chart-svg" role="img" aria-label="Cumulative user growth over time">
-        <defs>
-          <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="rgba(197,229,0,0.28)" />
-            <stop offset="100%" stop-color="rgba(197,229,0,0)" />
-          </linearGradient>
-        </defs>
-        ${grid}
-        <path d="${area}" fill="url(#fill)" />
-        <path d="${line}" fill="none" stroke="#c5e500" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-        <circle cx="${lastX}" cy="${lastY}" r="3.5" fill="#c5e500" />
-        ${xlabels}
-      </svg>
-    </div>`;
+    <div class="chart-title">${label} <span class="chart-sub">${series[series.length - 1]} · ${sub}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" class="chart-svg" role="img" aria-label="${label} over time">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(197,229,0,0.28)" />
+          <stop offset="100%" stop-color="rgba(197,229,0,0)" />
+        </linearGradient>
+      </defs>
+      ${grid}
+      <path d="${area}" fill="url(#${gid})" />
+      <path d="${line}" fill="none" stroke="#c5e500" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+      <circle cx="${lastX}" cy="${lastY}" r="3.5" fill="#c5e500" />
+      ${xlabels}
+    </svg>`;
 }
 
 function card(label, value, sub) {
@@ -195,6 +272,18 @@ function page(title, inner) {
       border-radius: 18px; padding: 18px; margin-top: 12px;
     }
     .chart-head { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85); margin-bottom: 12px; }
+    .chart-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .chart-tab {
+      font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 999px; padding: 6px 12px;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .chart-tab:hover { color: #fafafa; background: rgba(255,255,255,0.08); }
+    .chart-tab.active {
+      color: #08080c; background: #c5e500; border-color: #c5e500;
+    }
+    .chart-title { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85); margin-bottom: 10px; }
     .chart-sub { font-size: 11px; font-weight: 500; color: #71717a; margin-left: 6px; }
     .chart-svg { display: block; width: 100%; height: auto; }
     .axis { fill: #71717a; font-size: 11px; font-family: inherit; }
