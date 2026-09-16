@@ -383,3 +383,48 @@ export function subscribeRsvps(sessionId, onChange) {
     .subscribe();
   return () => { supabase.removeChannel(channel); };
 }
+
+// ---- In-app alerts (server-written notification_deliveries) ---------------
+
+// Kinds that get a full-screen takeover in the app, not just a tray push.
+export const ALERT_KINDS = ['contingent', 'contingent_confirmed'];
+
+// My unseen alert rows, oldest first. RLS scopes to the caller.
+export async function listUnseenAlerts() {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth?.user?.id;
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from('notification_deliveries')
+    .select('id, kind, session_id, sent_at')
+    .eq('user_id', uid)
+    .in('kind', ALERT_KINDS)
+    .is('seen_at', null)
+    .order('sent_at', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+// Stamp seen_at so the alert never shows again (on any device).
+export async function markAlertsSeen(ids) {
+  if (!ids || !ids.length) return;
+  const { error } = await supabase
+    .from('notification_deliveries')
+    .update({ seen_at: new Date().toISOString() })
+    .in('id', ids);
+  if (error) throw error;
+}
+
+// Fire when a new delivery row lands for this user (the push and the in-app
+// alert are written together server-side). Returns an unsubscribe fn.
+export function subscribeAlerts(userId, onInsert) {
+  const channel = supabase
+    .channel(`alerts:${userId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notification_deliveries', filter: `user_id=eq.${userId}` },
+      onInsert,
+    )
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}

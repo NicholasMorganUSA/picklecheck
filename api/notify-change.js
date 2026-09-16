@@ -154,14 +154,14 @@ export default async function handler(req, res) {
 
     const payload = {
       new:     { title: `New session — ${gname}`, body: `${when}${loc} · New session — tap to RSVP.`, tag: `new-${sessionId}`, url: `/?session=${sessionId}` },
-      cancel:  { title: `Cancelled — ${gname}`, body: `${when} is cancelled${cancelReason}.`, tag: `cancel-${sessionId}`, url: `/?session=${sessionId}` },
+      cancel:  { title: `Cancelled — ${gname}`, body: `${when} is cancelled${cancelReason}.`, tag: `cancel-${sessionId}`, url: `/?session=${sessionId}`, sticky: true },
       watch:   { title: `⚠️ ${watchReason} watch — ${gname}`, body: `${when} may be cancelled (${watchReason.toLowerCase()}). Heads up — we'll confirm soon.`, tag: `watch-${sessionId}`, url: `/?session=${sessionId}` },
       change:  { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Tap to update your RSVP.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
       // Unique tag per drop so multiple drops don't collapse on the device.
-      dropout: { title: dropoutTitle, body: dropoutBody, tag: `dropout-${sessionId}-${Date.now()}`, url: `/?session=${sessionId}` },
+      dropout: { title: dropoutTitle, body: dropoutBody, tag: `dropout-${sessionId}-${Date.now()}`, url: `/?session=${sessionId}`, sticky: true },
       // Shared tag: three people going contingent in a row collapse into one
       // notification on the device instead of three.
-      contingent: { title: contingentTitle, body: contingentBody, tag: `contingent-${sessionId}`, url: `/?session=${sessionId}` },
+      contingent: { title: contingentTitle, body: contingentBody, tag: `contingent-${sessionId}`, url: `/?session=${sessionId}`, sticky: true },
     }[kind];
     payload.sessionId = sessionId;
 

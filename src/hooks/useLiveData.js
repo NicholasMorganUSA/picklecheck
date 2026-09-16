@@ -111,6 +111,28 @@ export function useLiveData(enabled) {
   const [schedulesByGroup, setSchedulesByGroup] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Unseen in-app alerts (raw notification_deliveries rows for ALERT_KINDS).
+  const [alerts, setAlerts] = useState([]);
+
+  const refreshAlerts = useCallback(async () => {
+    if (!enabled || !user) { setAlerts([]); return; }
+    try { setAlerts(await data.listUnseenAlerts()); }
+    catch (e) { console.warn('[alerts] load failed:', e?.message || e); }
+  }, [enabled, user]);
+
+  // Optimistic: drop them from the queue now, persist seen_at in the background.
+  const dismissAlerts = useCallback((ids) => {
+    if (!ids || !ids.length) return;
+    const drop = new Set(ids);
+    setAlerts((prev) => prev.filter((a) => !drop.has(a.id)));
+    data.markAlertsSeen(ids).catch((e) => console.warn('[alerts] mark seen failed:', e?.message || e));
+  }, []);
+
+  useEffect(() => { refreshAlerts(); }, [refreshAlerts]);
+  useEffect(() => {
+    if (!enabled || !user) return;
+    return data.subscribeAlerts(user.id, () => refreshAlerts());
+  }, [enabled, user, refreshAlerts]);
 
   const load = useCallback(async () => {
     if (!enabled || !user) { setLoading(false); return; }
@@ -178,6 +200,9 @@ export function useLiveData(enabled) {
       setMembersByGroup(membersByGroup);
       setSchedulesByGroup(schedulesByGroupNext);
       setLoading(false);
+      // A delivery row can land a beat after the RSVP change that caused it —
+      // re-pull alerts on every load so nothing is missed if realtime lags.
+      data.listUnseenAlerts().then(setAlerts).catch(() => {});
     } catch (e) {
       console.error('[liveData] load error:', e);
       setError(e.message || String(e));
@@ -289,5 +314,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, joinByCode, saveGroup, deleteGroup, leaveGroup, saveSchedule, generateSessions };
+  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, alerts, dismissAlerts, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, joinByCode, saveGroup, deleteGroup, leaveGroup, saveSchedule, generateSessions };
 }

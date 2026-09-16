@@ -196,6 +196,7 @@ async function runAutoCancel(db, now) {
       body: `${when} is cancelled — ${reason}.`,
       tag: `cancel-${s.id}`,
       url: `/?session=${s.id}`,
+      sticky: true,
     };
     const subsByUser = await subscriptionsForUsers(db, audience);
     for (const uid of audience) {

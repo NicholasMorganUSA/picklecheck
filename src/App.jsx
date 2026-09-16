@@ -7,6 +7,8 @@ import { sendTestPush, notifyDropout } from "./lib/notify.js";
 import TutorialModal from "./components/TutorialModal.jsx";
 import NotificationsPromptModal from "./components/NotificationsPromptModal.jsx";
 import WhatsNewModal, { WHATS_NEW } from "./components/WhatsNewModal.jsx";
+import AlertTakeoverModal from "./components/AlertTakeoverModal.jsx";
+import { StickSteps } from "./components/NotificationsPromptModal.jsx";
 
 // ────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -1945,16 +1947,19 @@ const PushControl = () => {
   else if (state === 'needs-install') inner = note("To get notifications on iPhone, first add PickleCheck to your Home Screen (Share → “Add to Home Screen”), open it from there, then come back here to turn them on.");
   else if (state === 'denied') inner = note("Notifications are blocked. Turn them back on in your browser/phone settings, then reload.");
   else if (state === 'on') inner = (
-    <div className="px-4 py-3 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#c5e500', boxShadow: '0 0 8px #c5e500' }} />
-        <div className="min-w-0">
-          <div className="text-sm font-bold">Notifications on</div>
-          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>You’ll get reminders, cancellations & weather watches</div>
+    <>
+      <div className="px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#c5e500', boxShadow: '0 0 8px #c5e500' }} />
+          <div className="min-w-0">
+            <div className="text-sm font-bold">Notifications on</div>
+            <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>You’ll get reminders, cancellations & weather watches</div>
+          </div>
         </div>
+        <div className="flex-shrink-0">{pill('Test', test)}</div>
       </div>
-      <div className="flex-shrink-0">{pill('Test', test)}</div>
-    </div>
+      <StickyTip />
+    </>
   );
   else inner = (
     <div className="px-4 py-3 flex items-center justify-between gap-3">
@@ -1976,6 +1981,42 @@ const PushControl = () => {
         <div className="px-4 pb-3 text-[12px]" style={{ color: msg.ok ? '#c5e500' : '#fb7185' }}>{msg.text}</div>
       )}
     </>
+  );
+};
+
+// "Make alerts stick" — the phone won't show a modal, but iPhone users can make
+// banners stay until swiped (Banner Style → Persistent) and Android users can
+// keep the heads-up pop. Collapsed by default under the push control.
+const isIOSDevice = () => /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroidDevice = () => /android/i.test(navigator.userAgent || '');
+const StickyTip = () => {
+  const [open, setOpen] = useState(false);
+  const ios = isIOSDevice();
+  const android = isAndroidDevice();
+  if (!ios && !android) return null;
+  return (
+    <div className="px-4 pb-3">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between text-left py-2">
+        <span className="text-[12px] font-semibold" style={{ color: '#c5e500' }}>Make alerts stay on screen</span>
+        <ChevronDown size={14} style={{ color: 'var(--text-tertiary)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }} />
+      </button>
+      {open && (
+        <div className="text-[12px] leading-snug space-y-2" style={{ color: 'var(--text-secondary)' }}>
+          {ios ? (
+            <>
+              <div>iPhone banners slide away after a few seconds by default. Set PickleCheck to <span style={{ color: 'var(--text-strong)', fontWeight: 700 }}>Persistent</span> so a &ldquo;we need one more&rdquo; stays until you swipe it:</div>
+              <div style={{ color: '#fafafa' }}><StickSteps /></div>
+            </>
+          ) : (
+            <>
+              <div>Keep the heads-up pop for PickleCheck alerts:</div>
+              <div>Android <span style={{ color: 'var(--text-strong)', fontWeight: 700 }}>Settings → Apps → Chrome → Notifications</span>, find <span style={{ color: 'var(--text-strong)', fontWeight: 700 }}>picklecheck.in</span>, and make sure <span style={{ color: 'var(--text-strong)', fontWeight: 700 }}>Pop on screen</span> is on. On Samsung it&rsquo;s under Notification style → Alert.</div>
+            </>
+          )}
+          <div style={{ color: 'var(--text-tertiary)' }}>Either way, PickleCheck also shows a full-screen alert inside the app whenever someone goes &ldquo;in if we hit N&rdquo; or you get confirmed.</div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -3279,6 +3320,86 @@ export default function App({ account = null }) {
     } catch { /* ignore */ }
   }, [isDemo, account]);
 
+  // ---- In-app alert takeovers ------------------------------------------
+  // Group unseen delivery rows by session against live state. Anything that no
+  // longer needs an answer is marked seen silently; the rest queue up, one at
+  // a time (confirmations first). Demo: ?preview=alert shows a sample.
+  const demoAlertPreview = isDemo && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === 'alert';
+  const [demoAlertDismissed, setDemoAlertDismissed] = useState(false);
+  const alertQueue = useMemo(() => {
+    if (isDemo) {
+      if (!demoAlertPreview || demoAlertDismissed) return { show: [], stale: [] };
+      const s = filtered[safeIdx];
+      if (!s) return { show: [], stale: [] };
+      const demoSession = { ...s, in: confirmed, contingent: Math.max(1, contingent), groupName: groupInfo[s.groupId]?.name, location: groupInfo[s.groupId]?.location, myStatus };
+      const thr = defaultThreshold(confirmed);
+      return { show: [{ kind: 'contingent', ids: [], session: demoSession, need: contingentNeed(confirmed, [thr]), names: [{ name: 'Devin Smith', note: `if ${thr}` }] }], stale: [] };
+    }
+    const bySession = new Map();
+    for (const a of live.alerts || []) {
+      const e = bySession.get(a.session_id) || { ids: [], confirmed: false, contingent: false };
+      e.ids.push(a.id);
+      if (a.kind === 'contingent_confirmed') e.confirmed = true; else e.contingent = true;
+      bySession.set(a.session_id, e);
+    }
+    const show = [];
+    const stale = [];
+    for (const [sid, e] of bySession) {
+      const s = live.sessions.find((x) => x.id === sid);
+      // Unknown (left the group / session deleted), past, or cancelled → nothing to answer.
+      if (!s || s.past || s.cancelled) { stale.push(...e.ids); continue; }
+      if (e.confirmed && s.myStatus === 'in') {
+        show.push({ kind: 'confirmed', ids: e.ids, session: s, need: null, names: [] });
+        continue;
+      }
+      // "Someone went contingent": only worth a takeover while I still haven't
+      // answered and the contingency is still open.
+      const unanswered = s.myStatus === 'undecided' || s.myStatus === 'maybe';
+      if (e.contingent && unanswered && s.contingent > 0) {
+        const balls = [];
+        (s.contingentOthers || []).forEach((o) => { for (let i = 0; i < (o.party || 1); i++) balls.push(o.min || 4); });
+        show.push({ kind: 'contingent', ids: e.ids, session: s, need: contingentNeed(s.in, balls), names: s.roster?.contingent || [] });
+        continue;
+      }
+      stale.push(...e.ids);
+    }
+    show.sort((a, b) => (a.kind === 'confirmed' ? 0 : 1) - (b.kind === 'confirmed' ? 0 : 1));
+    return { show, stale };
+  }, [isDemo, demoAlertPreview, demoAlertDismissed, filtered, safeIdx, confirmed, contingent, myStatus, groupInfo, live.alerts, live.sessions]);
+
+  // Silently retire alerts that no longer need an answer.
+  useEffect(() => {
+    if (isDemo || !alertQueue.stale.length) return;
+    live.dismissAlerts(alertQueue.stale);
+  }, [isDemo, alertQueue.stale, live.dismissAlerts]);
+
+  // Hold the takeover back while onboarding modals are up.
+  const activeAlert = (!tutorialOpen && !whatsNewOpen && alertQueue.show[0]) || null;
+  const dismissActiveAlert = () => {
+    if (!activeAlert) return;
+    if (isDemo) { setDemoAlertDismissed(true); return; }
+    live.dismissAlerts(activeAlert.ids);
+  };
+  const answerActiveAlert = (status) => {
+    if (!activeAlert) return;
+    const sid = activeAlert.session.id;
+    const size = status === 'out' ? 1 : lastPartySize;
+    if (isDemo) {
+      setDemoAlertDismissed(true);
+      if (filtered[safeIdx]?.id === sid) applyStatusChange(status, size);
+      return;
+    }
+    live.dismissAlerts(activeAlert.ids);
+    live.setRsvp(sid, status, size).catch((e) => console.warn('[alert] rsvp failed', e));
+    goToSessionById(sid);
+  };
+  const viewActiveAlert = () => {
+    if (!activeAlert) return;
+    const sid = activeAlert.session.id;
+    dismissActiveAlert();
+    goToSessionById(sid);
+  };
+
   const closeWhatsNew = () => {
     setWhatsNewOpen(false);
     try { localStorage.setItem('pc_whatsnew_seen', WHATS_NEW.id); } catch { /* ignore */ }
@@ -3491,7 +3612,8 @@ export default function App({ account = null }) {
       <ContingentModal control={contingentModal} onConfirm={handleContingentConfirm} onGoIn={handleContingentGoIn} onClose={() => setContingentModal(null)} />
       <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
       <WhatsNewModal open={whatsNewOpen} onClose={closeWhatsNew} />
-      <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen && !whatsNewOpen} />
+      <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen && !whatsNewOpen && !activeAlert} />
+      <AlertTakeoverModal item={activeAlert} onRsvp={answerActiveAlert} onDismiss={dismissActiveAlert} onView={viewActiveAlert} />
       <DropoutConfirmModal
         control={dropoutConfirm}
         onClose={() => setDropoutConfirm(null)}

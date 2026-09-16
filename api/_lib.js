@@ -133,6 +133,7 @@ export async function notifyResolvedContingents(db, sessionId) {
       tag: `contingent-confirmed-${sessionId}`,
       url: `/?session=${sessionId}`,
       sessionId,
+      sticky: true,
     });
   }
   return sent;

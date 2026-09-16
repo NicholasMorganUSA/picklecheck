@@ -40,7 +40,7 @@ function isStandalone() {
 export default function NotificationsPromptModal({ active }) {
   const [eligible, setEligible] = useState(false);
   const [shown, setShown] = useState(false);
-  const [state, setState] = useState('off'); // 'off' | 'denied'
+  const [state, setState] = useState('off'); // 'off' | 'denied' | 'stick'
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
@@ -82,6 +82,9 @@ export default function NotificationsPromptModal({ active }) {
     try {
       const next = await enablePush();
       if (next === 'on') {
+        // iPhone: one more screen — how to make banners stay until dismissed.
+        // The app can't set this; only the user can, in Settings.
+        if (isIOS()) { setState('stick'); return; }
         setShown(false);
         setTimeout(() => setEligible(false), 250);
         return;
@@ -102,6 +105,62 @@ export default function NotificationsPromptModal({ active }) {
     try { localStorage.setItem(DISMISS_KEY, todayKey()); } catch { /* ignore */ }
     setTimeout(() => setEligible(false), 250);
   };
+  const done = () => {
+    setShown(false);
+    setTimeout(() => setEligible(false), 250);
+  };
+
+  if (state === 'stick') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 990,
+        background: 'rgba(8,8,12,0.96)',
+        backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+        color: '#fafafa', fontFamily: BODY,
+        opacity: shown ? 1 : 0, transition: 'opacity 250ms ease',
+        display: 'flex', flexDirection: 'column',
+        padding: '32px 20px calc(20px + env(safe-area-inset-bottom))',
+        overflowY: 'auto',
+      }}>
+        <div style={{ maxWidth: '440px', width: '100%', margin: '0 auto', flex: 1 }}>
+          <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+            <div style={{
+              display: 'inline-flex', width: '52px', height: '52px', borderRadius: '50%',
+              background: 'rgba(197,229,0,0.15)', border: '1px solid rgba(197,229,0,0.4)',
+              alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 24px rgba(197,229,0,0.25)',
+            }}>
+              <Bell size={26} style={{ color: '#c5e500' }} />
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', marginBottom: '22px' }}>
+            <div style={{ fontFamily: DISPLAY, fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '8px' }}>
+              Notifications are on ✅
+            </div>
+            <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, padding: '0 12px' }}>
+              One more thing. By default iPhone banners slide away after a few seconds. Make PickleCheck&rsquo;s{' '}
+              <span style={{ color: '#c5e500', fontWeight: 700 }}>stay on screen until you swipe them</span>, so a
+              &ldquo;we need one more&rdquo; never scrolls past you.
+            </div>
+          </div>
+          <StickSteps />
+          <button onClick={done} style={{
+            width: '100%', marginTop: '20px', padding: '16px',
+            background: '#c5e500', color: '#1a1f00', border: 'none', borderRadius: '14px',
+            fontSize: '15px', fontFamily: BODY, fontWeight: 800, boxShadow: '0 0 24px rgba(197,229,0,0.35)',
+          }}>
+            Done
+          </button>
+          <button onClick={done} style={{
+            width: '100%', marginTop: '12px', padding: '12px',
+            background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)',
+            fontSize: '12px', fontFamily: BODY, fontWeight: 600,
+          }}>
+            I&rsquo;ll do it later (it&rsquo;s also in Settings → Notifications)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -241,6 +300,19 @@ function OffSteps() {
       <Step n={3}>
         That&rsquo;s it — you&rsquo;ll start getting reminders, drop alerts, and cancellations as they happen.
       </Step>
+    </div>
+  );
+}
+
+// iOS Settings path for persistent banners — the closest thing to the old
+// "alert" style. Exported so Settings → Notifications can show it too.
+export function StickSteps() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <Step n={1}>Open the <strong style={{ color: '#fafafa' }}>Settings</strong> app on your iPhone.</Step>
+      <Step n={2}>Tap <strong style={{ color: '#fafafa' }}>Notifications</strong>, then scroll to <strong style={{ color: '#fafafa' }}>PickleCheck</strong>.</Step>
+      <Step n={3}>Under <strong style={{ color: '#fafafa' }}>Banner Style</strong>, pick <strong style={{ color: '#c5e500' }}>Persistent</strong>.</Step>
+      <Step n={4}>Optional: turn on <strong style={{ color: '#fafafa' }}>Sounds</strong> and <strong style={{ color: '#fafafa' }}>Badges</strong> while you&rsquo;re there.</Step>
     </div>
   );
 }
