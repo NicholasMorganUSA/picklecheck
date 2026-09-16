@@ -937,7 +937,17 @@ const HoldInButton = ({ active, contingent, contingentMin, disabled, onTap, onHo
       if (!s.down) return;
       const p = Math.min(1, (performance.now() - s.start) / HOLD_MS);
       setProgress(p);
-      if (p >= 1) { s.fired = true; stop(); onHold?.(); return; }
+      if (p >= 1) {
+        s.fired = true; stop();
+        // The modal opens under the still-pressed finger; the click the browser
+        // synthesizes on release would land on its overlay and close it.
+        // Swallow that one click (capture on document runs before React's root).
+        const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+        document.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), 600);
+        onHold?.();
+        return;
+      }
       s.raf = requestAnimationFrame(tick);
     };
     s.raf = requestAnimationFrame(tick);
@@ -977,63 +987,48 @@ const HoldInButton = ({ active, contingent, contingentMin, disabled, onTap, onHo
   );
 };
 
-// "I'm in if we reach N" — opened by holding I'M IN. Cancel (or tapping the
-// overlay) leaves the RSVP exactly as it was; nothing commits until the
-// primary button. control: { confirmed (excluding me), party, floor,
-// initialMin, otherBalls, adjusting }
+// "I'm in if we reach N" — opened by holding I'M IN. Four even targets above
+// the count on the board; tapping one commits. Cancel (or tapping the
+// overlay) leaves the RSVP exactly as it was. control: { confirmed (on the
+// board, excluding me), party, otherBalls, adjusting }
+const contingentOptions = (confirmed) => {
+  const first = confirmed % 2 === 0 ? confirmed + 2 : confirmed + 1; // first even number above
+  return [0, 1, 2, 3].map((i) => first + i * 2);
+};
 const ContingentModal = ({ control, onConfirm, onGoIn, onClose }) => {
-  const [min, setMin] = useState(8);
-  useEffect(() => { if (control) setMin(control.initialMin); }, [control]);
   const open = !!control;
-  const floor = control?.floor ?? 2;
-  const ceil = Math.max(16, floor + 4);
   const base = control?.confirmed ?? 0;
   const party = control?.party ?? 1;
-  // Others already waiting at or below this target count toward it too.
-  const othersBelow = (control?.otherBalls || []).filter((b) => b <= min).length;
-  const need = min - base - party - othersBelow;
-  const quick = [4, 8, 12, 16].filter((n) => n >= floor && n <= ceil);
+  const options = contingentOptions(base);
+  // Others already waiting at or below a target count toward it too.
+  const needFor = (n) => n - base - party - (control?.otherBalls || []).filter((b) => b <= n).length;
   return (
     <ModalSheet open={open} onClose={onClose} title="In if we reach…">
       <div className="space-y-4">
         <div className="text-[12px] text-zinc-400 leading-snug">
-          Commit conditionally. Once enough players are IN to hit this number ({party > 1 ? `your party of ${party}` : 'you'} included) you flip to IN automatically and get a push.
+          <span style={{ color: 'var(--text-strong)', fontWeight: 700 }}>{base} confirmed now.</span> Pick the number you need. Once enough players are IN to hit it ({party > 1 ? `your party of ${party}` : 'you'} included) you flip to IN automatically and get a push.
         </div>
-        <div className="flex items-center justify-center gap-5 py-2">
-          <button onClick={() => setMin(Math.max(floor, min - 1))} disabled={min <= floor}
-            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
-            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
-            aria-label="Lower target">−</button>
-          <div className="text-center min-w-[80px]">
-            <div className="text-6xl font-bold tabular-nums leading-none" style={{ color: '#c5e500', fontFamily: "'Bricolage Grotesque', sans-serif", fontVariationSettings: "'wdth' 95" }}>{min}</div>
-            <div className="text-[10px] tracking-[0.2em] text-zinc-500 font-bold uppercase mt-2">Players</div>
-          </div>
-          <button onClick={() => setMin(Math.min(ceil, min + 1))} disabled={min >= ceil}
-            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
-            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
-            aria-label="Raise target">+</button>
-        </div>
-        {quick.length > 0 && (
-          <div className="flex gap-1.5 justify-center">
-            {quick.map((n) => (
-              <button key={n} onClick={() => setMin(n)} className="text-xs px-3 py-1 rounded-full font-bold"
-                style={min === n ? { background: '#c5e500', color: '#1a1f00' } : { background: 'var(--bg-glass)', color: 'var(--text-muted)' }}>{n}</button>
-            ))}
-          </div>
-        )}
-        <div className="text-center text-[12px] font-semibold" style={{ color: '#c5e500' }}>
-          {base} confirmed now · {need <= 0 ? `that makes ${min} — you'd be IN right away` : `${need} more IN makes ${min}`}
+        <div className="grid grid-cols-4 gap-2">
+          {options.map((n) => {
+            const need = needFor(n);
+            return (
+              <button key={n} onClick={() => onConfirm(n)}
+                className="py-3 rounded-2xl flex flex-col items-center justify-center gap-1"
+                style={{ background: 'rgba(197,229,0,0.10)', border: '1px solid rgba(197,229,0,0.35)' }}>
+                <span className="text-3xl font-bold tabular-nums leading-none" style={{ color: '#c5e500', fontFamily: "'Bricolage Grotesque', sans-serif", fontVariationSettings: "'wdth' 95" }}>{n}</span>
+                <span className="text-[10px] font-bold tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  {need <= 0 ? 'right away' : `${need} more`}
+                </span>
+              </button>
+            );
+          })}
         </div>
         {control?.adjusting && (
           <button onClick={onGoIn} className="w-full py-3 rounded-2xl text-sm font-bold"
             style={{ background: 'var(--bg-input)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.35)' }}>Just put me IN</button>
         )}
-        <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold"
-            style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>Cancel</button>
-          <button onClick={() => onConfirm(min)} className="flex-1 py-3 rounded-2xl text-sm font-bold"
-            style={{ background: '#c5e500', color: '#1a1f00' }}>I'm in if we hit {min}</button>
-        </div>
+        <button onClick={onClose} className="w-full py-3 rounded-2xl text-sm font-bold"
+          style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>Cancel</button>
       </div>
     </ModalSheet>
   );
@@ -2939,7 +2934,7 @@ export default function App({ account = null }) {
   const [myPartySize, setMyPartySize] = useState(1);
   // "In if we hit N": my own target while contingent, and the hold-modal control.
   const [myContingentMin, setMyContingentMin] = useState(null);
-  const [contingentModal, setContingentModal] = useState(null); // { confirmed, party, floor, initialMin, otherBalls, adjusting, sessionId, groupName } | null
+  const [contingentModal, setContingentModal] = useState(null); // { confirmed, party, otherBalls, adjusting, sessionId, groupName } | null
   const [visibleGroups, setVisibleGroups] = useState(new Set(Object.keys(GROUP_INFO)));
   const [addInstanceFor, setAddInstanceFor] = useState(null);
   const [discoverOpen, setDiscoverOpen] = useState(false);
@@ -3063,11 +3058,9 @@ export default function App({ account = null }) {
     if (!cs || cs.cancelled) return;
     const party = isCounted(myStatus) ? myPartySize : lastPartySize;
     const base = myStatus === 'in' ? Math.max(0, confirmed - myPartySize) : confirmed;
-    const floor = base + party + 1; // anything lower is just "IN"
     const otherBalls = [];
     (cs.contingentOthers || []).forEach((o) => { for (let i = 0; i < (o.party || 1); i++) otherBalls.push(o.min || 4); });
-    const initialMin = myStatus === 'contingent' && myContingentMin ? Math.max(floor, myContingentMin) : ceil4(floor);
-    setContingentModal({ confirmed: base, party, floor, initialMin, otherBalls, adjusting: myStatus === 'contingent', sessionId: cs.id, groupName: cs.groupName });
+    setContingentModal({ confirmed: base, party, otherBalls, adjusting: myStatus === 'contingent', sessionId: cs.id, groupName: cs.groupName });
   };
   const handleContingentConfirm = (min) => {
     const ctl = contingentModal;
