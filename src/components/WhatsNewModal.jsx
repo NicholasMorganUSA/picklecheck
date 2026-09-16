@@ -13,13 +13,13 @@ import { useEffect } from 'react';
 // ────────────────────────────────────────────────────────────────────
 
 export const WHATS_NEW = {
-  id: 'textsize-2026-06',
+  id: 'contingent-2026-09',
   title: "What's new",
   items: [
     {
-      emoji: '🔠',
-      heading: 'Adjustable text size',
-      body: 'Hard to read the small text? Open Settings → App → Text size and bump it up — names, labels and details get bigger across the whole app.',
+      emoji: '🤞',
+      heading: '"I\u2019m in if we hit 8"',
+      body: "Six in and nobody wants to be the awkward 7th? Press and HOLD I'M IN to go contingent — pick the number you need, and you flip to IN automatically (with a push) the moment the group gets there. Your ball shows the number on the court so the maybes know exactly what's needed.",
     },
   ],
   cta: 'Got it',

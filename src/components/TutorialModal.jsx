@@ -21,6 +21,11 @@ const STEPS = [
     body: "Every upcoming game is a card. Tap I'M IN, TENTATIVE, or OUT — everyone sees it instantly. Bringing guests? Adjust your party size right on the card. Heading on vacation? Set an auto-out range in Settings and you'll auto-OUT for those dates across every group you're in.",
   },
   {
+    icon: '🤞',
+    title: 'Nobody wants to be the 7th?',
+    body: "Six are in and the maybes are waiting to see who else shows. Press and hold I'M IN to go contingent: \"I'm in if we hit 8.\" Your ball shows the number on the court, everyone sees exactly how many more are needed, and the moment enough players commit you flip to IN automatically — with a push to tell you.",
+  },
+  {
     icon: '👈👉',
     title: 'Swipe through dates',
     body: 'Swipe left or right between upcoming sessions. Tap the calendar icon in the top bar to switch to a list view of everything coming up.',

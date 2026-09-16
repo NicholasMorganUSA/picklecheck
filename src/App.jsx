@@ -113,6 +113,7 @@ const STATUS_PILL = {
   maybe:     { label: 'MAYBE', color: '#fcd34d',                       text: '#1a1500' },
   out:       { label: 'OUT',   color: '#52525b',                       text: '#fafafa' },
   undecided: { label: '?',     color: 'var(--bg-input-hover)',        text: 'var(--text-muted)' },
+  contingent: { label: 'IN IF', color: 'rgba(197,229,0,0.18)',         text: '#c5e500' },
 };
 
 // ────────────────────────────────────────────────────────────────────
@@ -153,7 +154,7 @@ function buildDemoSessions() {
   // "I'm in" and watch it flip red → green (4 = a full court).
   const opener = new Date(MOCK_NOW.getTime() + 3 * 3600 * 1000);
   opener.setMinutes(0, 0, 0);
-  const sessions = [{ id: 'demo-opener', groupId: 'dink', dateObj: opener, in: 3, maybe: 0, out: 0, undecided: 6, myStatus: 'undecided', past: false }];
+  const sessions = [{ id: 'demo-opener', groupId: 'dink', dateObj: opener, in: 3, maybe: 0, out: 0, undecided: 6, contingent: 0, myStatus: 'undecided', past: false }];
 
   // Each group's recurring sessions for the next few weeks, with varied counts.
   const cadence = [];
@@ -166,9 +167,14 @@ function buildDemoSessions() {
       if (!c.days.includes(dow)) continue;
       const dt = new Date(day); dt.setHours(c.hour, c.min, 0, 0);
       if (dt <= opener) continue; // keep the opener as the soonest session
+      const inCount = randInt(c.inMin, c.inMax);
+      // Some sessions sit in the awkward zone (2–3 short of a full court) with a
+      // player or two waiting "in if we hit N" — shows off contingency in the demo.
+      const short = (4 - (inCount % 4)) % 4;
+      const contingent = short >= 2 && Math.random() < 0.6 ? randInt(1, short - 1) : 0;
       cadence.push({
         id: `demo-${gid}-${d}`, groupId: gid, dateObj: dt,
-        in: randInt(c.inMin, c.inMax), maybe: randInt(0, c.maybeMax),
+        in: inCount, maybe: randInt(0, c.maybeMax), contingent,
         out: randInt(0, 2), undecided: randInt(1, 6), myStatus: 'undecided', past: false,
       });
     }
@@ -191,7 +197,7 @@ function generateRoster(session) {
     return ha - hb;
   });
 
-  const lists = { in: [], maybe: [], out: [], undecided: [] };
+  const lists = { in: [], maybe: [], out: [], undecided: [], contingent: [] };
   let idx = 0;
   const fill = (key, count) => {
     for (let i = 0; i < count; i++) {
@@ -200,17 +206,21 @@ function generateRoster(session) {
   };
   // Put "you" in the right bucket first; reduce that bucket count by the user's
   // party size (only counts > 1 for IN/MAYBE — see handleMyStatus).
-  const counts = { in: session.in, maybe: session.maybe, out: session.out, undecided: session.undecided };
-  const myCount = (session.myStatus === 'in' || session.myStatus === 'maybe') ? (session.myPartySize || 1) : 1;
+  const counts = { in: session.in, maybe: session.maybe, out: session.out, undecided: session.undecided, contingent: session.contingent || 0 };
+  const myCount = (session.myStatus === 'in' || session.myStatus === 'maybe' || session.myStatus === 'contingent') ? (session.myPartySize || 1) : 1;
   if (counts[session.myStatus] > 0) {
     const youLabel = myCount > 1 ? `${MOCK_USER.name} +${myCount - 1}` : MOCK_USER.name;
     lists[session.myStatus].push(youLabel);
     counts[session.myStatus] = Math.max(0, counts[session.myStatus] - myCount);
   }
   fill('in', counts.in);
+  fill('contingent', counts.contingent);
   fill('maybe', counts.maybe);
   fill('out', counts.out);
   fill('undecided', counts.undecided);
+  // Contingent rows carry their target ("if 8"). Demo players share one.
+  const thr = session.myContingentMin || defaultThreshold(session.in);
+  lists.contingent = lists.contingent.map((name) => ({ name, note: `if ${thr}` }));
   return lists;
 }
 
@@ -262,16 +272,39 @@ function getCourtGradient(confirmedHere, tentativeHere, totalConfirmed, totalCou
   }
   return [currentActual, potentialActual];
 }
-function distribute(confirmed, tentative) {
-  const total = confirmed + tentative;
+// ---- Contingency ("I'm in if we reach N") ----
+// Smallest multiple of 4 that is at least n (min 4) — courts fill in fours.
+const ceil4 = (n) => Math.max(4, Math.ceil(n / 4) * 4);
+// Default target for someone going contingent when `confirmed` are IN. One
+// more than "just go IN" rounded up to a full court: 6 → 8, 7 → 12, 3 → 8.
+const defaultThreshold = (confirmed) => ceil4(confirmed + 2);
+// How many more INs until the lowest-threshold group of contingents flips.
+// `balls` = one threshold per player slot (party sizes expanded). Mirrors
+// resolve_contingents() in the DB: sorted ascending, the k-th slot needs
+// confirmed + k >= its threshold. Returns { need, thr } or null.
+function contingentNeed(confirmed, balls) {
+  if (!balls || !balls.length) return null;
+  const sorted = [...balls].sort((a, b) => a - b);
+  let best = null;
+  sorted.forEach((thr, i) => {
+    const need = thr - (confirmed + i + 1);
+    if (best === null || need < best.need) best = { need, thr };
+  });
+  return best;
+}
+
+// Court slots fill in order: confirmed, then contingent, then maybe.
+function distribute(confirmed, contingent, tentative) {
+  const total = confirmed + contingent + tentative;
   const numCourts = Math.max(1, Math.ceil(total / 4));
   const courts = [];
-  let cRem = confirmed, tRem = tentative;
+  let cRem = confirmed, kRem = contingent, tRem = tentative;
   for (let i = 0; i < numCourts; i++) {
     const cHere = Math.min(4, cRem);
-    const tHere = Math.min(4 - cHere, tRem);
-    courts.push({ confirmed: cHere, tentative: tHere });
-    cRem -= cHere; tRem -= tHere;
+    const kHere = Math.min(4 - cHere, kRem);
+    const tHere = Math.min(4 - cHere - kHere, tRem);
+    courts.push({ confirmed: cHere, contingent: kHere, tentative: tHere });
+    cRem -= cHere; kRem -= kHere; tRem -= tHere;
   }
   return courts;
 }
@@ -313,7 +346,7 @@ function initials(name) {
 // ────────────────────────────────────────────────────────────────────
 // SVG: Ball, Court, MiniCourt
 // ────────────────────────────────────────────────────────────────────
-const Ball = ({ cx, cy, state }) => {
+const Ball = ({ cx, cy, state, label }) => {
   if (state === 'confirmed') {
     return (
       <g style={{ filter: 'drop-shadow(0 0 3.5px rgba(197, 229, 0, 0.85))' }}>
@@ -326,13 +359,22 @@ const Ball = ({ cx, cy, state }) => {
       </g>
     );
   }
+  if (state === 'contingent') {
+    // Half-lit ball stamped with its target: "this ball becomes real at 8".
+    return (
+      <g className="pc-contingent" style={{ filter: 'drop-shadow(0 0 3px rgba(197,229,0,0.6))' }}>
+        <circle cx={cx} cy={cy} r="10" fill="rgba(197,229,0,0.40)" stroke="#c5e500" strokeWidth="1.4" />
+        <text x={cx} y={cy + 0.5} fontSize="11.5" fill="#f7ffb8" fontFamily="'Bricolage Grotesque', sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{label}</text>
+      </g>
+    );
+  }
   if (state === 'tentative') {
     return <circle cx={cx} cy={cy} r="10" fill="rgba(197,229,0,0.14)" stroke="#c5e500" strokeWidth="1.2" strokeDasharray="2,1.5" />;
   }
   return <circle cx={cx} cy={cy} r="10" fill="rgba(0,0,0,0.18)" stroke="rgba(255,255,255,0.28)" strokeWidth="0.8" />;
 };
 
-const Court = ({ confirmed, tentative, colors, number }) => {
+const Court = ({ confirmed, contingent = 0, contingentLabels = [], tentative, colors, number }) => {
   const [currentColorName, potentialColorName] = colors;
   const cur = COLOR[currentColorName];
   const pot = COLOR[potentialColorName];
@@ -340,9 +382,10 @@ const Court = ({ confirmed, tentative, colors, number }) => {
   const id = useId().replace(/:/g, '_');
   const ballStates = [];
   for (let i = 0; i < 4; i++) {
-    if (i < confirmed) ballStates.push('confirmed');
-    else if (i < confirmed + tentative) ballStates.push('tentative');
-    else ballStates.push('empty');
+    if (i < confirmed) ballStates.push({ state: 'confirmed' });
+    else if (i < confirmed + contingent) ballStates.push({ state: 'contingent', label: contingentLabels[i - confirmed] ?? '' });
+    else if (i < confirmed + contingent + tentative) ballStates.push({ state: 'tentative' });
+    else ballStates.push({ state: 'empty' });
   }
   const positions = [
     { x: 25, y: 37 }, { x: 25, y: 183 },
@@ -374,7 +417,7 @@ const Court = ({ confirmed, tentative, colors, number }) => {
       <rect x="3" y="108" width="94" height="4" fill="rgba(0,0,0,0.45)" rx="0.5" />
       <line x1="3" y1="110" x2="97" y2="110" stroke="rgba(255,255,255,0.9)" strokeWidth="0.5" strokeDasharray="2,1.5" />
       <text x="50" y="110" fontSize="44" fill="white" fontFamily="'Bricolage Grotesque', sans-serif" fontWeight="800" textAnchor="middle" dominantBaseline="central">{number}</text>
-      {positions.map((p, i) => <Ball key={i} cx={p.x} cy={p.y} state={ballStates[i]} />)}
+      {positions.map((p, i) => <Ball key={i} cx={p.x} cy={p.y} state={ballStates[i].state} label={ballStates[i].label} />)}
     </svg>
   );
 };
@@ -399,16 +442,20 @@ const MiniCourt = ({ color, number }) => {
   );
 };
 
-const CourtGrid = ({ confirmed, tentative }) => {
-  const courts = distribute(confirmed, tentative);
+const CourtGrid = ({ confirmed, tentative, contingent = 0, contingentBalls = [] }) => {
+  const courts = distribute(confirmed, contingent, tentative);
   const n = courts.length;
-  const gradientOf = (c) => getCourtGradient(c.confirmed, c.tentative, confirmed, n);
+  // Contingents count as "potential" for the court color, exactly like maybes.
+  const gradientOf = (c) => getCourtGradient(c.confirmed, c.contingent + c.tentative, confirmed, n);
+  // Hand thresholds out in court order (contingentBalls is sorted ascending).
+  let kIdx = 0;
+  const labels = courts.map((c) => { const l = contingentBalls.slice(kIdx, kIdx + c.contingent); kIdx += c.contingent; return l; });
   if (n <= 4) {
     const cols = n === 1 ? 'grid-cols-1' : n === 2 ? 'grid-cols-2' : n === 3 ? 'grid-cols-3' : 'grid-cols-4';
     const maxWidth = n === 1 ? '95px' : n === 2 ? '220px' : n === 3 ? '270px' : undefined;
     return (
       <div className={`grid ${cols} gap-3 mx-auto`} style={{ maxWidth }}>
-        {courts.map((c, i) => <Court key={i} confirmed={c.confirmed} tentative={c.tentative} colors={gradientOf(c)} number={i + 1} />)}
+        {courts.map((c, i) => <Court key={i} confirmed={c.confirmed} contingent={c.contingent} contingentLabels={labels[i]} tentative={c.tentative} colors={gradientOf(c)} number={i + 1} />)}
       </div>
     );
   }
@@ -424,7 +471,7 @@ const CourtGrid = ({ confirmed, tentative }) => {
         {minis.map((c, i) => <MiniCourt key={`m${i}`} color={gradientOf(c)[0]} number={i + 1} />)}
       </div>
       <div className={`grid ${bigsCols} gap-3 mx-auto`} style={{ maxWidth: bigsMaxWidth }}>
-        {bigs.map((c, i) => <Court key={`b${i}`} confirmed={c.confirmed} tentative={c.tentative} colors={gradientOf(c)} number={miniCount + i + 1} />)}
+        {bigs.map((c, i) => <Court key={`b${i}`} confirmed={c.confirmed} contingent={c.contingent} contingentLabels={labels[miniCount + i]} tentative={c.tentative} colors={gradientOf(c)} number={miniCount + i + 1} />)}
       </div>
     </div>
   );
@@ -627,7 +674,7 @@ const SessionAdminPanel = ({ session, open, onToggle, interactive, onSetWatch, o
 // SESSION CARD
 // (interactive=false for peek cards on either side)
 // ────────────────────────────────────────────────────────────────────
-const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, myPartySize = 1, displayPartySize = 1, onMyStatus, onAdjustParty, interactive = true, meName = MOCK_USER.name, onPrev, onNext, canPrev = false, canNext = false, canEdit = false, onEdit, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
+const SessionCard = ({ session, confirmed, tentative, out, undecided, contingent = 0, myStatus, myPartySize = 1, displayPartySize = 1, myContingentMin = null, onMyStatus, onAdjustParty, onHoldIn, interactive = true, meName = MOCK_USER.name, onPrev, onNext, canPrev = false, canNext = false, canEdit = false, onEdit, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
   // Real sessions carry groupName + roster + location; the mock prototype falls back to GROUP_INFO/generateRoster.
   const groupName = session.groupName || GROUP_INFO[session.groupId]?.name || 'Group';
   const location = session.location || GROUP_INFO[session.groupId]?.location || null;
@@ -637,9 +684,21 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
   const o = COLOR[overall];
   const [rosterOpen, setRosterOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
-  const computedRoster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, myStatus, myPartySize }),
-    [session.id, confirmed, tentative, out, undecided, myStatus, myPartySize]);
+  const computedRoster = useMemo(() => generateRoster({ ...session, in: confirmed, maybe: tentative, out, undecided, contingent, myStatus, myPartySize, myContingentMin }),
+    [session.id, confirmed, tentative, out, undecided, contingent, myStatus, myPartySize, myContingentMin]);
   const roster = session.roster || computedRoster;
+  // One threshold per contingent player slot, ascending. Other people's come
+  // from the session; my own rides local state so the optimistic UI stays
+  // consistent mid-tap. Demo steppers can outrun known names — pad/trim.
+  const contingentBalls = useMemo(() => {
+    const list = [];
+    (session.contingentOthers || []).forEach((o) => { for (let i = 0; i < (o.party || 1); i++) list.push(o.min || defaultThreshold(confirmed)); });
+    if (myStatus === 'contingent') for (let i = 0; i < (myPartySize || 1); i++) list.push(myContingentMin || defaultThreshold(confirmed));
+    while (list.length < contingent) list.push(defaultThreshold(confirmed));
+    list.sort((a, b) => a - b);
+    return list.slice(0, contingent);
+  }, [session.contingentOthers, myStatus, myPartySize, myContingentMin, contingent, confirmed]);
+  const need = contingentNeed(confirmed, contingentBalls);
   const context = dayContext(session.dateObj);
   const isContextLabel = ['TODAY', 'TOMORROW'].includes(context) || context.startsWith('IN ');
 
@@ -702,7 +761,7 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
 
       {/* Courts (with a big diagonal CANCELLED stamp when called off) */}
       <div className="px-5 pt-1 pb-3 relative">
-        <CourtGrid confirmed={confirmed} tentative={tentative} />
+        <CourtGrid confirmed={confirmed} tentative={tentative} contingent={contingent} contingentBalls={contingentBalls} />
         {session.cancelled && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div style={{
@@ -739,6 +798,16 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
             <div>
               <div className={`text-sm font-bold tracking-wide ${o.text}`}>{o.label}</div>
               {o.sub && <div className="text-[11px] text-zinc-400 mt-0.5">{o.sub}</div>}
+              {contingent > 0 && need && (
+                <div className="text-[11px] mt-0.5 font-semibold" style={{ color: '#c5e500' }}>
+                  🤞 {contingent} in if we hit {need.thr} · {need.need <= 0 ? 'confirming now…' : `${need.need} more IN makes it`}
+                </div>
+              )}
+              {myStatus === 'in' && session.myResolvedMin && (
+                <div className="text-[11px] mt-0.5 font-semibold" style={{ color: '#c5e500' }}>
+                  ✅ You're confirmed — we hit {session.myResolvedMin}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -759,11 +828,10 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
         </button>
       </div>
 
-      {/* Status buttons */}
+      {/* Status buttons — I'M IN also takes a press-and-hold for "in if we hit N" */}
       <div className="grid grid-cols-3 gap-2 px-5 pb-4">
-        <ActionButton label="I'M IN" active={myStatus === 'in'} disabled={!interactive}
-          activeStyle={{ background: '#c5e500', color: '#0a0a0c', boxShadow: '0 0 24px rgba(197,229,0,0.5), 0 1px 0 rgba(255,255,255,0.18) inset' }}
-          onClick={() => interactive && onMyStatus('in')} />
+        <HoldInButton active={myStatus === 'in'} contingent={myStatus === 'contingent'} contingentMin={myContingentMin} disabled={!interactive}
+          onTap={() => interactive && onMyStatus('in')} onHold={() => interactive && onHoldIn?.()} />
         <ActionButton label="MAYBE" active={myStatus === 'maybe'} disabled={!interactive}
           activeStyle={{ background: '#fcd34d', color: '#1a1500', boxShadow: '0 0 24px rgba(252,211,77,0.4), 0 1px 0 rgba(255,255,255,0.18) inset' }}
           onClick={() => interactive && onMyStatus('maybe')} />
@@ -771,6 +839,17 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
           activeStyle={{ background: '#52525b', color: '#fff', boxShadow: '0 0 18px rgba(82,82,91,0.4), 0 1px 0 rgba(255,255,255,0.18) inset' }}
           onClick={() => interactive && onMyStatus('out')} />
       </div>
+      {/* Hold hint — teaches the gesture once a contingency would actually matter */}
+      {interactive && !session.cancelled && myStatus === 'contingent' && (
+        <div className="px-5 -mt-2 pb-3 text-center text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+          In if we hit <span style={{ color: '#c5e500', fontWeight: 700 }}>{myContingentMin}</span> · tap I'M IN to commit now · hold to adjust
+        </div>
+      )}
+      {interactive && !session.cancelled && myStatus !== 'in' && myStatus !== 'contingent' && confirmed + contingent >= 3 && (
+        <div className="px-5 -mt-2 pb-3 text-center text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+          Hold <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>I'M IN</span> to go in only if we reach {defaultThreshold(confirmed)}
+        </div>
+      )}
 
       {/* Roster toggle */}
       <button
@@ -791,7 +870,7 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
             {confirmed} IN
           </span>
           <span className="text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
-            of {confirmed + tentative + out + undecided}
+            of {confirmed + contingent + tentative + out + undecided}
           </span>
         </span>
         <ChevronDown size={18} style={{ color: 'var(--text-secondary)', transform: rosterOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }} />
@@ -801,6 +880,9 @@ const SessionCard = ({ session, confirmed, tentative, out, undecided, myStatus, 
       {rosterOpen && (
         <div className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
           <RosterSection title="IN"        names={roster.in}        color="#c5e500" lighter meName={meName} />
+          {roster.contingent?.length > 0 && (
+            <RosterSection title="CONTINGENT" names={roster.contingent} color="#a3c000" meName={meName} />
+          )}
           <RosterSection title="MAYBE"     names={roster.maybe}     color="#fcd34d" meName={meName} />
           <RosterSection title="OUT"       names={roster.out}       color="#a1a1aa" meName={meName} />
           <RosterSection title="UNDECIDED" names={roster.undecided} color="#71717a" meName={meName} />
@@ -830,6 +912,133 @@ const ActionButton = ({ label, active, activeStyle, onClick, disabled }) => (
   </button>
 );
 
+// I'M IN with a press-and-hold. A lime fill sweeps across the button; complete
+// it and the contingency modal opens ("in if we hit N"). Releasing early is a
+// normal tap, so a curious press still lands IN — the sweeping fill (and the
+// label morphing to "IN IF…") teaches the gesture on its own. Any movement
+// past the carousel's 8px swipe threshold cancels both the hold and the tap.
+const HOLD_MS = 750;
+const HoldInButton = ({ active, contingent, contingentMin, disabled, onTap, onHold }) => {
+  const [progress, setProgress] = useState(0);
+  const h = useRef({ raf: null, start: 0, fired: false, moved: false, x: 0, y: 0, down: false });
+  const stop = () => {
+    const s = h.current;
+    if (s.raf) cancelAnimationFrame(s.raf);
+    s.raf = null; s.down = false;
+    setProgress(0);
+  };
+  useEffect(() => () => { if (h.current.raf) cancelAnimationFrame(h.current.raf); }, []);
+  const onPointerDown = (e) => {
+    if (disabled) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const s = h.current;
+    s.down = true; s.fired = false; s.moved = false; s.start = performance.now(); s.x = e.clientX; s.y = e.clientY;
+    const tick = () => {
+      if (!s.down) return;
+      const p = Math.min(1, (performance.now() - s.start) / HOLD_MS);
+      setProgress(p);
+      if (p >= 1) { s.fired = true; stop(); onHold?.(); return; }
+      s.raf = requestAnimationFrame(tick);
+    };
+    s.raf = requestAnimationFrame(tick);
+  };
+  const onPointerMove = (e) => {
+    const s = h.current;
+    if (!s.down) return;
+    if (Math.abs(e.clientX - s.x) > 8 || Math.abs(e.clientY - s.y) > 8) { s.moved = true; stop(); }
+  };
+  const onPointerUp = () => {
+    const s = h.current;
+    if (!s.down) return;
+    stop();
+    if (!s.fired && !s.moved) onTap?.();
+  };
+  const onPointerCancel = () => { if (h.current.down) { h.current.moved = true; stop(); } };
+  const style = active
+    ? { background: '#c5e500', color: '#0a0a0c', boxShadow: '0 0 24px rgba(197,229,0,0.5), 0 1px 0 rgba(255,255,255,0.18) inset' }
+    : contingent
+      ? { background: 'rgba(197,229,0,0.12)', color: '#c5e500', border: '1.5px solid #c5e500', boxShadow: '0 0 18px rgba(197,229,0,0.25)' }
+      : { background: 'var(--bg-subtle)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)' };
+  const label = progress > 0.12 ? 'IN IF…' : contingent ? `IN IF ${contingentMin || '?'}` : "I'M IN";
+  return (
+    <button type="button" disabled={disabled}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel} onPointerLeave={onPointerCancel}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap?.(); } }}
+      className="relative overflow-hidden py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all"
+      style={{ ...style, WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'manipulation' }}>
+      {progress > 0 && (
+        <span aria-hidden className="absolute inset-y-0 left-0 pointer-events-none"
+          style={{ width: `${progress * 100}%`, background: active ? 'rgba(10,10,12,0.18)' : 'rgba(197,229,0,0.38)', boxShadow: '0 0 16px rgba(197,229,0,0.35)' }} />
+      )}
+      <span className="relative">{label}</span>
+    </button>
+  );
+};
+
+// "I'm in if we reach N" — opened by holding I'M IN. Cancel (or tapping the
+// overlay) leaves the RSVP exactly as it was; nothing commits until the
+// primary button. control: { confirmed (excluding me), party, floor,
+// initialMin, otherBalls, adjusting }
+const ContingentModal = ({ control, onConfirm, onGoIn, onClose }) => {
+  const [min, setMin] = useState(8);
+  useEffect(() => { if (control) setMin(control.initialMin); }, [control]);
+  const open = !!control;
+  const floor = control?.floor ?? 2;
+  const ceil = Math.max(16, floor + 4);
+  const base = control?.confirmed ?? 0;
+  const party = control?.party ?? 1;
+  // Others already waiting at or below this target count toward it too.
+  const othersBelow = (control?.otherBalls || []).filter((b) => b <= min).length;
+  const need = min - base - party - othersBelow;
+  const quick = [4, 8, 12, 16].filter((n) => n >= floor && n <= ceil);
+  return (
+    <ModalSheet open={open} onClose={onClose} title="In if we reach…">
+      <div className="space-y-4">
+        <div className="text-[12px] text-zinc-400 leading-snug">
+          Commit conditionally. Once enough players are IN to hit this number ({party > 1 ? `your party of ${party}` : 'you'} included) you flip to IN automatically and get a push.
+        </div>
+        <div className="flex items-center justify-center gap-5 py-2">
+          <button onClick={() => setMin(Math.max(floor, min - 1))} disabled={min <= floor}
+            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
+            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+            aria-label="Lower target">−</button>
+          <div className="text-center min-w-[80px]">
+            <div className="text-6xl font-bold tabular-nums leading-none" style={{ color: '#c5e500', fontFamily: "'Bricolage Grotesque', sans-serif", fontVariationSettings: "'wdth' 95" }}>{min}</div>
+            <div className="text-[10px] tracking-[0.2em] text-zinc-500 font-bold uppercase mt-2">Players</div>
+          </div>
+          <button onClick={() => setMin(Math.min(ceil, min + 1))} disabled={min >= ceil}
+            className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-2xl leading-none disabled:opacity-30"
+            style={{ background: 'var(--bg-input-hover)', color: 'var(--text-strong)' }}
+            aria-label="Raise target">+</button>
+        </div>
+        {quick.length > 0 && (
+          <div className="flex gap-1.5 justify-center">
+            {quick.map((n) => (
+              <button key={n} onClick={() => setMin(n)} className="text-xs px-3 py-1 rounded-full font-bold"
+                style={min === n ? { background: '#c5e500', color: '#1a1f00' } : { background: 'var(--bg-glass)', color: 'var(--text-muted)' }}>{n}</button>
+            ))}
+          </div>
+        )}
+        <div className="text-center text-[12px] font-semibold" style={{ color: '#c5e500' }}>
+          {base} confirmed now · {need <= 0 ? `that makes ${min} — you'd be IN right away` : `${need} more IN makes ${min}`}
+        </div>
+        {control?.adjusting && (
+          <button onClick={onGoIn} className="w-full py-3 rounded-2xl text-sm font-bold"
+            style={{ background: 'var(--bg-input)', color: '#c5e500', border: '1px solid rgba(197,229,0,0.35)' }}>Just put me IN</button>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold"
+            style={{ background: 'var(--bg-input)', color: 'var(--text-strong)' }}>Cancel</button>
+          <button onClick={() => onConfirm(min)} className="flex-1 py-3 rounded-2xl text-sm font-bold"
+            style={{ background: '#c5e500', color: '#1a1f00' }}>I'm in if we hit {min}</button>
+        </div>
+      </div>
+    </ModalSheet>
+  );
+};
+
 const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }) => {
   if (!names || names.length === 0) {
     return (
@@ -849,14 +1058,19 @@ const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }
         <div className="text-[10px] font-bold tracking-[0.2em]" style={{ color }}>{title} · {names.length}</div>
       </div>
       <div className="space-y-1.5 ml-3.5">
-        {names.map((name, i) => (
-          <div key={i} className="flex items-center gap-2.5">
-            <Avatar name={name} size={24} isYou={name === meName} />
-            <span className="text-[13px]" style={{ color: name === meName ? '#c5e500' : 'var(--text-strong)' }}>
-              {name === meName ? `${name} (you)` : name}
-            </span>
-          </div>
-        ))}
+        {names.map((entry, i) => {
+          const name = typeof entry === 'string' ? entry : entry.name;
+          const note = typeof entry === 'string' ? null : entry.note;
+          return (
+            <div key={i} className="flex items-center gap-2.5">
+              <Avatar name={name} size={24} isYou={name === meName} />
+              <span className="text-[13px]" style={{ color: name === meName ? '#c5e500' : 'var(--text-strong)' }}>
+                {name === meName ? `${name} (you)` : name}
+              </span>
+              {note && <span className="text-[11px] font-bold" style={{ color }}>{note}</span>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -865,7 +1079,7 @@ const RosterSection = ({ title, names, color, lighter, meName = MOCK_USER.name }
 // ────────────────────────────────────────────────────────────────────
 // SESSION CAROUSEL — peeks prev/next during swipe
 // ────────────────────────────────────────────────────────────────────
-const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, myStatus, myPartySize, displayPartySize, onMyStatus, onAdjustParty, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit, canEditOf = () => false, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
+const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, out, undecided, contingent = 0, myStatus, myPartySize, displayPartySize, myContingentMin = null, onMyStatus, onAdjustParty, onHoldIn, onPrev, onNext, meName = MOCK_USER.name, canEdit = false, onEdit, canEditOf = () => false, onSetWatch, onClearWatch, onCancel, onUncancel, onDelete }) => {
   const prevSession = filteredSessions[currentIdx - 1] || null;
   const currentSession = filteredSessions[currentIdx];
   const nextSession = filteredSessions[currentIdx + 1] || null;
@@ -968,8 +1182,8 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
           {prevSession ? (
             <SessionCard
               session={prevSession}
-              confirmed={prevSession.in} tentative={prevSession.maybe} out={prevSession.out} undecided={prevSession.undecided}
-              myStatus={prevSession.myStatus} myPartySize={prevSession.myPartySize || 1} displayPartySize={prevSession.myPartySize || 1}
+              confirmed={prevSession.in} tentative={prevSession.maybe} out={prevSession.out} undecided={prevSession.undecided} contingent={prevSession.contingent || 0}
+              myStatus={prevSession.myStatus} myPartySize={prevSession.myPartySize || 1} displayPartySize={prevSession.myPartySize || 1} myContingentMin={prevSession.myContingentMin || null}
               onMyStatus={() => {}} interactive={false} meName={meName}
               canPrev={currentIdx - 1 > 0} canNext canEdit={canEditOf(prevSession)}
             />
@@ -979,8 +1193,8 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
         <div className="px-5" style={{ flex: '0 0 33.3333%', width: '33.3333%' }}>
           <SessionCard
             session={currentSession}
-            confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
-            myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={onMyStatus} onAdjustParty={onAdjustParty} interactive={true}
+            confirmed={confirmed} tentative={tentative} out={out} undecided={undecided} contingent={contingent}
+            myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} myContingentMin={myContingentMin} onMyStatus={onMyStatus} onAdjustParty={onAdjustParty} onHoldIn={onHoldIn} interactive={true}
             meName={meName}
             onPrev={onPrev} onNext={onNext} canPrev={canPrev} canNext={canNext}
             canEdit={canEdit} onEdit={onEdit}
@@ -993,8 +1207,8 @@ const SessionCarousel = ({ filteredSessions, currentIdx, confirmed, tentative, o
           {nextSession ? (
             <SessionCard
               session={nextSession}
-              confirmed={nextSession.in} tentative={nextSession.maybe} out={nextSession.out} undecided={nextSession.undecided}
-              myStatus={nextSession.myStatus} myPartySize={nextSession.myPartySize || 1} displayPartySize={nextSession.myPartySize || 1}
+              confirmed={nextSession.in} tentative={nextSession.maybe} out={nextSession.out} undecided={nextSession.undecided} contingent={nextSession.contingent || 0}
+              myStatus={nextSession.myStatus} myPartySize={nextSession.myPartySize || 1} displayPartySize={nextSession.myPartySize || 1} myContingentMin={nextSession.myContingentMin || null}
               onMyStatus={() => {}} interactive={false} meName={meName}
               canPrev canNext={!!filteredSessions[currentIdx + 2]} canEdit={canEditOf(nextSession)}
             />
@@ -1053,6 +1267,7 @@ const WeekView = ({ sessions, onSelect }) => {
                     <div className="text-[11px] text-zinc-500 flex items-center gap-1.5">
                       <span>{fmtTime(s.dateObj)}</span><span>·</span>
                       <span className="font-semibold text-emerald-300">{s.in} IN</span>
+                      {s.contingent > 0 && <><span>·</span><span className="font-semibold" style={{ color: '#c5e500' }}>{s.contingent} IF {s.contingentMin || defaultThreshold(s.in)}</span></>}
                       {s.maybe > 0 && <><span>·</span><span className="font-semibold text-amber-300">{s.maybe} MAYBE</span></>}
                     </div>
                   </div>
@@ -1525,7 +1740,7 @@ const EditInstanceModal = ({ session, onClose, onSave }) => {
 // Confirm modal when an IN player tries to drop close to start. Yes alerts the group.
 const DropoutConfirmModal = ({ control, onConfirm, onClose }) => {
   const open = !!control;
-  const action = control?.targetStatus === 'out' ? 'drop out' : 'switch to tentative';
+  const action = control?.targetStatus === 'out' ? 'drop out' : control?.targetStatus === 'contingent' ? 'go contingent' : 'switch to tentative';
   const grp = control?.groupName || 'the group';
   return (
     <ModalSheet open={open} onClose={onClose} title="Heads up — close to game time">
@@ -2552,7 +2767,7 @@ const InviteMemberModal = ({ open, onClose, groupName, groupCode, real = false }
 // ────────────────────────────────────────────────────────────────────
 // DEMO CONTROLS
 // ────────────────────────────────────────────────────────────────────
-const DemoControls = ({ confirmed, setConfirmed, tentative, setTentative, out, setOut, undecided, setUndecided }) => (
+const DemoControls = ({ confirmed, setConfirmed, tentative, setTentative, out, setOut, undecided, setUndecided, contingent = 0, setContingent = () => {} }) => (
   <div className="rounded-3xl backdrop-blur-xl p-4 space-y-3"
     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
     <div className="text-[10px] tracking-[0.25em] text-zinc-500 font-bold uppercase">Demo · adjust counts</div>
@@ -2561,10 +2776,11 @@ const DemoControls = ({ confirmed, setConfirmed, tentative, setTentative, out, s
       <DemoStepper label="MAYBE" value={tentative} onChange={setTentative} max={8}  color="#fcd34d" />
       <DemoStepper label="OUT"   value={out}       onChange={setOut}       max={16} color="#a1a1aa" />
       <DemoStepper label="?"     value={undecided} onChange={setUndecided} max={16} color="#71717a" />
+      <DemoStepper label="IN IF" value={contingent} onChange={setContingent} max={8}  color="#c5e500" />
     </div>
     <div className="flex gap-1.5 flex-wrap pt-1">
       {[3, 4, 6, 7, 8, 11, 12, 16, 24].map(n => (
-        <button key={n} onClick={() => { setConfirmed(n); setTentative(0); }}
+        <button key={n} onClick={() => { setConfirmed(n); setTentative(0); setContingent(0); }}
           className="text-xs px-2.5 py-1 rounded-full font-bold"
           style={confirmed === n ? { background: '#c5e500', color: '#1a1f00' } : { background: 'var(--bg-glass)', color: 'var(--text-muted)' }}>
           {n}
@@ -2718,8 +2934,12 @@ export default function App({ account = null }) {
   const [tentative, setTentative] = useState(initial.maybe);
   const [out, setOut] = useState(initial.out);
   const [undecided, setUndecided] = useState(initial.undecided);
+  const [contingent, setContingent] = useState(initial.contingent || 0);
   const [myStatus, setMyStatus] = useState(initial.myStatus);
   const [myPartySize, setMyPartySize] = useState(1);
+  // "In if we hit N": my own target while contingent, and the hold-modal control.
+  const [myContingentMin, setMyContingentMin] = useState(null);
+  const [contingentModal, setContingentModal] = useState(null); // { confirmed, party, floor, initialMin, otherBalls, adjusting, sessionId, groupName } | null
   const [visibleGroups, setVisibleGroups] = useState(new Set(Object.keys(GROUP_INFO)));
   const [addInstanceFor, setAddInstanceFor] = useState(null);
   const [discoverOpen, setDiscoverOpen] = useState(false);
@@ -2801,23 +3021,69 @@ export default function App({ account = null }) {
   const loadSession = (s) => {
     if (!s) return;
     setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided); setMyStatus(s.myStatus);
+    setContingent(s.contingent || 0); setMyContingentMin(s.myContingentMin || null);
     setMyPartySize(1); // reset — mock sessions don't carry party size
+  };
+
+  const isCounted = (st) => st === 'in' || st === 'maybe' || st === 'contingent';
+
+  // True when the current session is inside its group's last-minute-drop window.
+  const withinDropWindow = (sid) => {
+    const cs = filtered[safeIdx];
+    if (!cs || cs.id !== sid) return false;
+    const win = groupInfo[cs.groupId]?.lastminute_window_minutes;
+    if (!win) return false;
+    const minsTo = (cs.dateObj.getTime() - Date.now()) / 60000;
+    return minsTo > 0 && minsTo <= win;
   };
 
   // Apply a status change with a specific party size. Updates buckets and state
   // optimistically; in the real app it also persists the RSVP to the DB.
-  const applyStatusChange = (newStatus, newSize) => {
-    const oldSize = (myStatus === 'in' || myStatus === 'maybe') ? myPartySize : 1;
-    const actualNewSize = (newStatus === 'in' || newStatus === 'maybe') ? newSize : 1;
-    const setters = { in: setConfirmed, maybe: setTentative, out: setOut, undecided: setUndecided };
+  // `min` is the contingency target (only meaningful for status 'contingent').
+  const applyStatusChange = (newStatus, newSize, min = null) => {
+    const oldSize = isCounted(myStatus) ? myPartySize : 1;
+    const actualNewSize = isCounted(newStatus) ? newSize : 1;
+    const newMin = newStatus === 'contingent' ? (min ?? myContingentMin ?? defaultThreshold(confirmed)) : null;
+    const setters = { in: setConfirmed, maybe: setTentative, out: setOut, undecided: setUndecided, contingent: setContingent };
     setters[myStatus]?.(v => Math.max(0, v - oldSize));
     setters[newStatus]?.(v => v + actualNewSize);
     setMyStatus(newStatus);
     setMyPartySize(actualNewSize);
+    setMyContingentMin(newMin);
     if (!isDemo) {
       const sid = filtered[safeIdx]?.id;
-      if (sid) live.setRsvp(sid, newStatus, actualNewSize);
+      if (sid) live.setRsvp(sid, newStatus, actualNewSize, newMin);
     }
+  };
+
+  // Hold on I'M IN → contingency modal. `confirmed` for the modal excludes my
+  // own party (if I'm already IN, I'm asking to step back to conditional).
+  const openContingent = () => {
+    const cs = filtered[safeIdx];
+    if (!cs || cs.cancelled) return;
+    const party = isCounted(myStatus) ? myPartySize : lastPartySize;
+    const base = myStatus === 'in' ? Math.max(0, confirmed - myPartySize) : confirmed;
+    const floor = base + party + 1; // anything lower is just "IN"
+    const otherBalls = [];
+    (cs.contingentOthers || []).forEach((o) => { for (let i = 0; i < (o.party || 1); i++) otherBalls.push(o.min || 4); });
+    const initialMin = myStatus === 'contingent' && myContingentMin ? Math.max(floor, myContingentMin) : ceil4(floor);
+    setContingentModal({ confirmed: base, party, floor, initialMin, otherBalls, adjusting: myStatus === 'contingent', sessionId: cs.id, groupName: cs.groupName });
+  };
+  const handleContingentConfirm = (min) => {
+    const ctl = contingentModal;
+    setContingentModal(null);
+    if (!ctl) return;
+    // IN → contingent inside the drop window is a drop: confirm + alert first.
+    if (!isDemo && myStatus === 'in' && withinDropWindow(ctl.sessionId)) {
+      setDropoutConfirm({ targetStatus: 'contingent', sessionId: ctl.sessionId, groupName: ctl.groupName, size: ctl.party, min });
+      return;
+    }
+    applyStatusChange('contingent', ctl.party, min);
+  };
+  const handleContingentGoIn = () => {
+    const ctl = contingentModal;
+    setContingentModal(null);
+    if (ctl) applyStatusChange('in', ctl.party);
   };
 
   // Button tap on IN/MAYBE/OUT. Opens modal if user is committing with size > 1.
@@ -2828,13 +3094,9 @@ export default function App({ account = null }) {
     // the alert to everyone NOT IN so someone can fill in).
     if (!isDemo && myStatus === 'in' && (newStatus === 'out' || newStatus === 'maybe')) {
       const cs = filtered[safeIdx];
-      const win = cs && groupInfo[cs.groupId]?.lastminute_window_minutes;
-      if (cs && win) {
-        const minsTo = (cs.dateObj.getTime() - Date.now()) / 60000;
-        if (minsTo > 0 && minsTo <= win) {
-          setDropoutConfirm({ targetStatus: newStatus, sessionId: cs.id, groupName: cs.groupName });
-          return;
-        }
+      if (cs && withinDropWindow(cs.id)) {
+        setDropoutConfirm({ targetStatus: newStatus, sessionId: cs.id, groupName: cs.groupName });
+        return;
       }
     }
     // OUT/UNDECIDED don't track party size — direct commit at size 1
@@ -2842,9 +3104,10 @@ export default function App({ account = null }) {
       applyStatusChange(newStatus, 1);
       return;
     }
-    // IN/MAYBE: figure out "intended" size — current size if already committed,
+    // IN/MAYBE: figure out "intended" size — current size if already committed
+    // (contingent counts: tapping I'M IN while contingent commits fully),
     // otherwise the sticky default from last commit
-    const isCommitted = myStatus === 'in' || myStatus === 'maybe';
+    const isCommitted = isCounted(myStatus);
     const intendedSize = isCommitted ? myPartySize : lastPartySize;
     if (intendedSize <= 1) {
       applyStatusChange(newStatus, 1);
@@ -2858,7 +3121,7 @@ export default function App({ account = null }) {
   // in-place. If undecided/out, modal updates the sticky default only — actual
   // commit happens when the user later taps IN/MAYBE.
   const handleAdjustParty = () => {
-    const isCommitted = myStatus === 'in' || myStatus === 'maybe';
+    const isCommitted = isCounted(myStatus);
     setPartyModal({
       targetStatus: isCommitted ? myStatus : null,
       initialSize: isCommitted ? myPartySize : lastPartySize,
@@ -2876,8 +3139,8 @@ export default function App({ account = null }) {
     setPartyModal(null);
   };
 
-  // Displayed in the chip — sticky when not committed, live size when in/maybe
-  const displayPartySize = (myStatus === 'in' || myStatus === 'maybe') ? myPartySize : lastPartySize;
+  // Displayed in the chip — sticky when not committed, live size when in/maybe/contingent
+  const displayPartySize = isCounted(myStatus) ? myPartySize : lastPartySize;
   const goTo = (idx) => {
     const s = filtered[idx];
     if (!s) return;
@@ -2897,6 +3160,28 @@ export default function App({ account = null }) {
   const handleManage = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-settings'); };
   const handleDetails = (gid) => { setActiveGroupId(gid); setGroupsOpen(false); setView('group-details'); };
 
+  // Demo only: stand in for the DB trigger. Once enough are IN, the contingents
+  // whose threshold is met flip to IN — after a beat, so the balls are seen
+  // turning solid. Same prefix rule as resolve_contingents().
+  useEffect(() => {
+    if (!isDemo || contingent <= 0) return;
+    const mine = myStatus === 'contingent' ? myPartySize : 0;
+    const balls = [];
+    for (let i = 0; i < contingent - mine; i++) balls.push(defaultThreshold(confirmed));
+    for (let i = 0; i < mine; i++) balls.push(myContingentMin || defaultThreshold(confirmed));
+    balls.sort((a, b) => a - b);
+    let best = 0;
+    balls.forEach((thr, i) => { if (confirmed + i + 1 >= thr) best = i + 1; });
+    if (!best) return;
+    const meFlips = mine > 0 && (myContingentMin || defaultThreshold(confirmed)) <= balls[best - 1];
+    const t = setTimeout(() => {
+      setConfirmed((c) => c + best);
+      setContingent((k) => Math.max(0, k - best));
+      if (meFlips) { setMyStatus('in'); setMyContingentMin(null); }
+    }, 650);
+    return () => clearTimeout(t);
+  }, [isDemo, confirmed, contingent, myStatus, myPartySize, myContingentMin]);
+
   // Real groups are visible-by-default in the menu (union in new ones; never wipe user hides).
   useEffect(() => {
     if (isDemo) return;
@@ -2912,8 +3197,8 @@ export default function App({ account = null }) {
     if (isDemo) return;
     const s = filtered[safeIdx];
     if (s) {
-      setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided);
-      setMyStatus(s.myStatus); setMyPartySize(s.myPartySize || 1);
+      setConfirmed(s.in); setTentative(s.maybe); setOut(s.out); setUndecided(s.undecided); setContingent(s.contingent || 0);
+      setMyStatus(s.myStatus); setMyPartySize(s.myPartySize || 1); setMyContingentMin(s.myContingentMin || null);
     }
   }, [isDemo, safeIdx, live.sessions, visibleGroups]);
 
@@ -3044,6 +3329,9 @@ export default function App({ account = null }) {
         .text-xl   { font-size: calc(1.25rem  * var(--fs, 1)); }
         .text-2xl  { font-size: calc(1.5rem   * var(--fs, 1)); }
         input, select, textarea { font-size: 16px !important; }
+        /* Contingent court balls breathe — "ready and willing" next to the static confirmed ones */
+        @keyframes pc-pulse { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
+        .pc-contingent { animation: pc-pulse 1.8s ease-in-out infinite; }
         /* Light-theme overrides for Tailwind color utilities used throughout the app.
            Inline styles already reference --text-* / --bg-* CSS vars; this block handles
            the remaining className-based color references. */
@@ -3093,8 +3381,9 @@ export default function App({ account = null }) {
                 <SessionCarousel
                   filteredSessions={filtered}
                   currentIdx={safeIdx}
-                  confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
-                  myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
+                  confirmed={confirmed} tentative={tentative} out={out} undecided={undecided} contingent={contingent}
+                  myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} myContingentMin={myContingentMin}
+                  onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty} onHoldIn={openContingent}
                   onPrev={goPrev} onNext={goNext}
                   meName={meName}
                 />
@@ -3103,6 +3392,7 @@ export default function App({ account = null }) {
                   tentative={tentative} setTentative={setTentative}
                   out={out} setOut={setOut}
                   undecided={undecided} setUndecided={setUndecided}
+                  contingent={contingent} setContingent={setContingent}
                 />
               </>
             )
@@ -3119,8 +3409,9 @@ export default function App({ account = null }) {
               <SessionCarousel
                 filteredSessions={filtered}
                 currentIdx={safeIdx}
-                confirmed={confirmed} tentative={tentative} out={out} undecided={undecided}
-                myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty}
+                confirmed={confirmed} tentative={tentative} out={out} undecided={undecided} contingent={contingent}
+                myStatus={myStatus} myPartySize={myPartySize} displayPartySize={displayPartySize} myContingentMin={myContingentMin}
+                onMyStatus={handleMyStatus} onAdjustParty={handleAdjustParty} onHoldIn={openContingent}
                 onPrev={goPrev} onNext={goNext}
                 meName={meName}
                 canEdit={canEditCurrent} onEdit={() => setEditSession(currentSession)}
@@ -3204,6 +3495,7 @@ export default function App({ account = null }) {
       <DiscoverGroupsModal open={discoverOpen} onClose={() => setDiscoverOpen(false)}
         onJoinCode={isDemo ? null : live.joinByCode} />
       <PartySizeModal control={partyModal} onConfirm={handlePartyConfirm} onClose={() => setPartyModal(null)} />
+      <ContingentModal control={contingentModal} onConfirm={handleContingentConfirm} onGoIn={handleContingentGoIn} onClose={() => setContingentModal(null)} />
       <TutorialModal open={tutorialOpen} onClose={closeTutorial} />
       <WhatsNewModal open={whatsNewOpen} onClose={closeWhatsNew} />
       <NotificationsPromptModal active={!isDemo && !!account && !tutorialOpen && !whatsNewOpen} />
@@ -3214,7 +3506,7 @@ export default function App({ account = null }) {
           const ctl = dropoutConfirm;
           setDropoutConfirm(null);
           if (!ctl) return;
-          applyStatusChange(ctl.targetStatus, 1);
+          applyStatusChange(ctl.targetStatus, ctl.size || 1, ctl.min ?? null);
           notifyDropout(ctl.sessionId).catch((e) => console.warn('[dropout] notify failed', e));
         }}
       />

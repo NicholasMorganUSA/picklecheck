@@ -85,3 +85,55 @@ export function readJsonBody(req) {
   if (typeof req.body === 'string') { try { return JSON.parse(req.body); } catch { return {}; } }
   return {};
 }
+
+// ---- Contingent RSVPs ------------------------------------------------------
+
+// How many more INs until the lowest-threshold group of contingents resolves.
+// `balls` = one threshold per player-slot (party sizes expanded). Mirrors the
+// prefix rule in resolve_contingents(): sorted ascending, the k-th slot needs
+// confirmed + k >= its threshold. Returns { need, thr } or null.
+export function contingentNeed(confirmed, balls) {
+  if (!balls || !balls.length) return null;
+  const sorted = [...balls].sort((a, b) => a - b);
+  let best = null;
+  sorted.forEach((thr, i) => {
+    const need = thr - (confirmed + i + 1);
+    if (best === null || need < best.need) best = { need, thr };
+  });
+  return best;
+}
+
+// Push "you're confirmed" to every contingent on this session whose threshold
+// was met (the DB trigger flipped them to IN and stamped contingent_resolved_at).
+// Idempotent via the partial unique index on notification_deliveries.
+export async function notifyResolvedContingents(db, sessionId) {
+  const { data: rows } = await db
+    .from('rsvps').select('user_id, contingent_min')
+    .eq('session_id', sessionId).eq('status', 'in').not('contingent_resolved_at', 'is', null);
+  if (!rows || !rows.length) return 0;
+
+  const { data: session } = await db
+    .from('sessions').select('id, group_id, starts_at').eq('id', sessionId).single();
+  if (!session) return 0;
+  const { data: grp } = await db.from('groups').select('name').eq('id', session.group_id).single();
+  const { data: sched } = await db.from('schedules').select('timezone').eq('group_id', session.group_id).maybeSingle();
+  const when = formatWhen(session.starts_at, sched?.timezone);
+  const gname = grp?.name || 'PickleCheck';
+
+  const subsByUser = await subscriptionsForUsers(db, rows.map((r) => r.user_id));
+  let sent = 0;
+  for (const r of rows) {
+    const { error } = await db
+      .from('notification_deliveries')
+      .insert({ kind: 'contingent_confirmed', session_id: sessionId, user_id: r.user_id });
+    if (error) continue; // already claimed → already sent
+    sent += await sendToSubscriptions(db, subsByUser[r.user_id] || [], {
+      title: `✅ You're IN — ${gname}`,
+      body: `We hit ${r.contingent_min} for ${when}. You're confirmed — see you out there.`,
+      tag: `contingent-confirmed-${sessionId}`,
+      url: `/?session=${sessionId}`,
+      sessionId,
+    });
+  }
+  return sent;
+}

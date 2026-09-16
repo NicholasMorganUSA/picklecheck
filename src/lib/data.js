@@ -280,14 +280,22 @@ export async function listRsvps(sessionId) {
 }
 
 // Set (insert or update) the current user's RSVP for a session.
-export async function setMyRsvp({ sessionId, status, partySize = 1 }) {
+// status 'contingent' = "I'm in if we reach contingentMin" (total IN count,
+// including this party). The DB trigger flips it to 'in' once met. Any manual
+// write clears contingent_resolved_at so a later contingency starts fresh.
+export async function setMyRsvp({ sessionId, status, partySize = 1, contingentMin = null }) {
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth?.user?.id;
   if (!userId) throw new Error('Not signed in');
+  if (status === 'contingent' && !(contingentMin >= 2)) throw new Error('Contingent RSVP needs a target count');
   const { data, error } = await supabase
     .from('rsvps')
     .upsert(
-      { session_id: sessionId, user_id: userId, status, party_size: partySize },
+      {
+        session_id: sessionId, user_id: userId, status, party_size: partySize,
+        contingent_min: status === 'contingent' ? contingentMin : null,
+        contingent_resolved_at: null,
+      },
       { onConflict: 'session_id,user_id' },
     )
     .select()

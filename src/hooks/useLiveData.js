@@ -2,19 +2,22 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/auth.jsx';
 import { supabase } from '../lib/supabase.js';
 import * as data from '../lib/data.js';
-import { notifySessionChange } from '../lib/notify.js';
+import { notifySessionChange, notifyRsvp } from '../lib/notify.js';
 
 const MS_HOUR = 3600 * 1000;
 
 // Turn one DB session + its rsvps/members into the shape the prototype UI wants:
 // { id, groupId, groupName, dateObj, courtCount, in, maybe, out, undecided,
-//   myStatus, myPartySize, past, roster:{in,maybe,out,undecided} }
+//   contingent, contingentOthers, contingentMin, myStatus, myPartySize,
+//   myContingentMin, past, roster:{in,maybe,out,undecided,contingent} }
 function adaptSession(s, group, members, rsvps, myId, now, schedule) {
   // Restricted ad-hoc session — only show the invited subset everywhere on the card.
   const invitedSet = (s.invited_user_ids && s.invited_user_ids.length) ? new Set(s.invited_user_ids) : null;
-  const buckets = { in: [], maybe: [], out: [] };
+  const buckets = { in: [], maybe: [], out: [], contingent: [] };
   let myStatus = 'undecided';
   let myPartySize = 1;
+  let myContingentMin = null;
+  let myResolvedMin = null;
 
   for (const r of rsvps) {
     const uid = r.user?.id;
@@ -22,22 +25,33 @@ function adaptSession(s, group, members, rsvps, myId, now, schedule) {
     if (uid === myId) {
       myStatus = r.status;
       myPartySize = r.party_size || 1;
+      myContingentMin = r.status === 'contingent' ? (r.contingent_min || null) : null;
+      // IN via a met contingency — lets the card say "confirmed · we hit 8".
+      myResolvedMin = r.status === 'in' && r.contingent_resolved_at ? (r.contingent_min || null) : null;
     }
     // Skip stale RSVPs from people not in the invite list (e.g. someone uninvited
     // after RSVPing). RLS normally prevents these but guard defensively.
     if (invitedSet && !invitedSet.has(uid)) continue;
-    if (r.status === 'in' || r.status === 'maybe' || r.status === 'out') {
-      buckets[r.status].push({ id: uid, name, party: r.party_size || 1 });
+    if (r.status === 'in' || r.status === 'maybe' || r.status === 'out' || r.status === 'contingent') {
+      buckets[r.status].push({ id: uid, name, party: r.party_size || 1, min: r.contingent_min || null });
     }
   }
 
-  const decided = new Set([...buckets.in, ...buckets.maybe, ...buckets.out].map((x) => x.id));
+  const decided = new Set([...buckets.in, ...buckets.maybe, ...buckets.out, ...buckets.contingent].map((x) => x.id));
   const eligibleMembers = invitedSet ? members.filter((m) => invitedSet.has(m.id)) : members;
   const undecidedMembers = eligibleMembers.filter((m) => !decided.has(m.id));
 
   const sumParty = (list) => list.reduce((n, x) => n + (x.party || 1), 0);
   const label = (x) => (x.party > 1 ? `${x.name} +${x.party - 1}` : x.name);
   const dateObj = new Date(s.starts_at);
+  // Other people's contingencies (not mine) — the card merges in my own from
+  // local state so the optimistic UI stays consistent mid-tap.
+  const contingentOthers = buckets.contingent
+    .filter((x) => x.id !== myId)
+    .map((x) => ({ min: x.min || 4, party: x.party || 1 }));
+  const contingentMin = buckets.contingent.length
+    ? Math.min(...buckets.contingent.map((x) => x.min || 4))
+    : null;
 
   // True when this session's day-of-week or time is off the group's recurring cadence.
   let timeDiffers = false;
@@ -69,14 +83,20 @@ function adaptSession(s, group, members, rsvps, myId, now, schedule) {
     maybe: sumParty(buckets.maybe),
     out: buckets.out.length,
     undecided: undecidedMembers.length,
+    contingent: sumParty(buckets.contingent),
+    contingentOthers,
+    contingentMin,
     myStatus,
     myPartySize,
+    myContingentMin,
+    myResolvedMin,
     past: dateObj.getTime() + MS_HOUR < now, // drops off 1h after start
     roster: {
       in: buckets.in.map(label),
       maybe: buckets.maybe.map(label),
       out: buckets.out.map((x) => x.name),
       undecided: undecidedMembers.map((m) => m.full_name || 'Member'),
+      contingent: buckets.contingent.map((x) => ({ name: label(x), note: `if ${x.min || '?'}` })),
     },
   };
 }
@@ -123,7 +143,7 @@ export function useLiveData(enabled) {
       if (sessionIds.length) {
         const { data: rows, error: rErr } = await supabase
           .from('rsvps')
-          .select('session_id, status, party_size, user:profiles(id, full_name)')
+          .select('session_id, status, party_size, contingent_min, contingent_resolved_at, user:profiles(id, full_name)')
           .in('session_id', sessionIds);
         if (rErr) throw rErr;
         for (const r of rows || []) {
@@ -179,8 +199,13 @@ export function useLiveData(enabled) {
     return () => { supabase.removeChannel(ch); };
   }, [enabled, user, load]);
 
-  const setRsvp = useCallback(async (sessionId, status, partySize = 1) => {
-    await data.setMyRsvp({ sessionId, status, partySize });
+  const setRsvp = useCallback(async (sessionId, status, partySize = 1, contingentMin = null) => {
+    await data.setMyRsvp({ sessionId, status, partySize, contingentMin });
+    // Contingency pushes (best-effort, never block the UI). The DB trigger has
+    // already resolved any thresholds this write met; the endpoint tells the
+    // people affected.
+    if (status === 'contingent') notifyRsvp(sessionId, 'contingent').catch((e) => console.warn('[notify] contingent alert failed:', e));
+    else if (status === 'in') notifyRsvp(sessionId, 'resolve').catch((e) => console.warn('[notify] resolve check failed:', e));
     await load();
   }, [load]);
 

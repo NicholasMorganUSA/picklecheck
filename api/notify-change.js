@@ -1,12 +1,18 @@
 // Event alert — called by the client right after a session action:
-//   • new     : session just created         → EVERYONE in the group (member auth)
-//   • change  : time/location changed         → EVERYONE (an OUT player may flip)
-//   • cancel  : session called off           → everyone NOT out (admin auth)
-//   • watch   : "weather watch" heads-up      → everyone NOT out (admin auth)
-//   • dropout : IN player dropped near start  → everyone NOT in (member auth)
+//   • new        : session just created          → EVERYONE in the group (member auth)
+//   • change     : time/location changed          → EVERYONE (an OUT player may flip)
+//   • cancel     : session called off            → everyone NOT out (admin auth)
+//   • watch      : "weather watch" heads-up       → everyone NOT out (admin auth)
+//   • dropout    : IN player dropped near start   → everyone NOT in (member auth)
+//   • contingent : caller went "in if we hit N"   → MAYBE + UNDECIDED (member auth),
+//                  then pushes "you're confirmed" to any contingents the DB
+//                  trigger just resolved
+//   • resolve    : caller went IN — only checks for newly-resolved contingents
+//                  and pushes "you're confirmed" to them (member auth)
 // The reason text is read from the row server-side.
 import {
   admin, userIdFromRequest, subscriptionsForUsers, sendToSubscriptions, formatWhen, readJsonBody,
+  contingentNeed, notifyResolvedContingents,
 } from './_lib.js';
 
 export default async function handler(req, res) {
@@ -16,8 +22,9 @@ export default async function handler(req, res) {
   if (!uid) return res.status(401).json({ error: 'not signed in' });
 
   const { sessionId, kind } = readJsonBody(req);
-  if (!sessionId || !['new', 'cancel', 'change', 'watch', 'dropout'].includes(kind)) {
-    return res.status(400).json({ error: 'sessionId and kind (new|cancel|change|watch|dropout) required' });
+  const KINDS = ['new', 'cancel', 'change', 'watch', 'dropout', 'contingent', 'resolve'];
+  if (!sessionId || !KINDS.includes(kind)) {
+    return res.status(400).json({ error: `sessionId and kind (${KINDS.join('|')}) required` });
   }
 
   const db = admin();
@@ -34,7 +41,15 @@ export default async function handler(req, res) {
       .from('group_members').select('role')
       .eq('group_id', session.group_id).eq('user_id', uid).maybeSingle();
     if (!mem) return res.status(403).json({ error: 'not a group member' });
-    if (kind !== 'new' && kind !== 'dropout' && mem.role !== 'admin') return res.status(403).json({ error: 'not a group admin' });
+    const MEMBER_KINDS = ['new', 'dropout', 'contingent', 'resolve'];
+    if (!MEMBER_KINDS.includes(kind) && mem.role !== 'admin') return res.status(403).json({ error: 'not a group admin' });
+
+    // Contingency resolution: the trigger already flipped any contingents whose
+    // threshold the caller's RSVP met. Push "you're confirmed" to them.
+    if (kind === 'resolve') {
+      const sent = await notifyResolvedContingents(db, sessionId);
+      return res.status(200).json({ ok: true, sent });
+    }
 
     // Respect the group's toggles (default on). 'new' and 'watch' always send —
     // they're explicit, deliberate actions.
@@ -51,14 +66,24 @@ export default async function handler(req, res) {
     const gname = grp?.name || 'PickleCheck';
 
     // Pre-load rsvps once — used by multiple audience rules below.
-    const { data: allRsvps } = await db.from('rsvps').select('user_id, status, party_size').eq('session_id', sessionId);
+    const { data: allRsvps } = await db.from('rsvps').select('user_id, status, party_size, contingent_min').eq('session_id', sessionId);
 
     // Audience:
     //   new / change   → everyone in the group (a change can win back an OUT player)
     //   cancel / watch → everyone who hasn't opted out (IN + MAYBE + UNDECIDED/no-row)
     //   dropout        → everyone NOT currently IN (so someone can step in)
     let audience;
-    if (kind === 'new' || kind === 'change') {
+    if (kind === 'contingent') {
+      // Only the fence-sitters: MAYBE, UNDECIDED, or no row yet. IN players
+      // don't need it, OUT players opted out, other contingents already know.
+      const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
+      const statusByUser = {};
+      for (const r of allRsvps || []) statusByUser[r.user_id] = r.status;
+      audience = (members || []).map((m) => m.user_id).filter((id) => {
+        const st = statusByUser[id];
+        return !st || st === 'undecided' || st === 'maybe';
+      });
+    } else if (kind === 'new' || kind === 'change') {
       const { data: members } = await db.from('group_members').select('user_id').eq('group_id', session.group_id);
       audience = (members || []).map((m) => m.user_id);
     } else if (kind === 'dropout') {
@@ -76,7 +101,38 @@ export default async function handler(req, res) {
       const invited = new Set(session.invited_user_ids);
       audience = audience.filter((id) => invited.has(id));
     }
-    if (!audience.length) return res.status(200).json({ ok: true, sent: 0 });
+
+    // Contingent: "Nick is in if we hit 8 · 6 confirmed · 1 more IN makes it."
+    // If the caller's own row is no longer 'contingent' the trigger resolved
+    // them on the spot (threshold already met) — skip the heads-up and just
+    // send the confirmations.
+    let contingentTitle = '';
+    let contingentBody = '';
+    if (kind === 'contingent') {
+      const mine = (allRsvps || []).find((r) => r.user_id === uid);
+      if (!mine || mine.status !== 'contingent') {
+        const sent = await notifyResolvedContingents(db, sessionId);
+        return res.status(200).json({ ok: true, sent, note: 'already resolved' });
+      }
+      const { data: caller } = await db.from('profiles').select('full_name').eq('id', uid).single();
+      const callerName = caller?.full_name || 'A player';
+      const inCount = (allRsvps || []).filter((r) => r.status === 'in').reduce((n, r) => n + (r.party_size || 1), 0);
+      const balls = [];
+      for (const r of allRsvps || []) {
+        if (r.status !== 'contingent' || !r.contingent_min) continue;
+        for (let i = 0; i < (r.party_size || 1); i++) balls.push(r.contingent_min);
+      }
+      const nd = contingentNeed(inCount, balls);
+      const need = Math.max(1, nd ? nd.need : 1);
+      const thr = nd ? nd.thr : mine.contingent_min;
+      const who = (mine.party_size || 1) > 1 ? `${callerName} +${mine.party_size - 1} are` : `${callerName} is`;
+      contingentTitle = `🤞 ${who} in if we hit ${thr} — ${gname}`;
+      contingentBody = `${when} · ${inCount} confirmed · ${need} more IN makes ${thr}. Tap to check in.`;
+    }
+    if (!audience.length) {
+      const sent = kind === 'contingent' ? await notifyResolvedContingents(db, sessionId) : 0;
+      return res.status(200).json({ ok: true, sent });
+    }
 
     const cancelReason = session.cancel_reason ? ` — ${session.cancel_reason}` : '';
     const watchReason = session.watch_reason || 'Weather';
@@ -103,6 +159,9 @@ export default async function handler(req, res) {
       change:  { title: `Updated — ${gname}`, body: `${when}${loc} — time/place changed. Tap to update your RSVP.`, tag: `change-${sessionId}`, url: `/?session=${sessionId}` },
       // Unique tag per drop so multiple drops don't collapse on the device.
       dropout: { title: dropoutTitle, body: dropoutBody, tag: `dropout-${sessionId}-${Date.now()}`, url: `/?session=${sessionId}` },
+      // Shared tag: three people going contingent in a row collapse into one
+      // notification on the device instead of three.
+      contingent: { title: contingentTitle, body: contingentBody, tag: `contingent-${sessionId}`, url: `/?session=${sessionId}` },
     }[kind];
     payload.sessionId = sessionId;
 
@@ -112,6 +171,8 @@ export default async function handler(req, res) {
       sent += await sendToSubscriptions(db, subsByUser[auId] || [], payload);
       await db.from('notification_deliveries').insert({ kind, session_id: sessionId, user_id: auId });
     }
+    // A contingent RSVP can itself complete someone else's threshold.
+    if (kind === 'contingent') sent += await notifyResolvedContingents(db, sessionId);
     return res.status(200).json({ ok: true, sent });
   } catch (e) {
     console.error('[notify-change] error', e);

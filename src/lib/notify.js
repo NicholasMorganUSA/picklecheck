@@ -38,3 +38,12 @@ export function notifySessionChange(sessionId, kind) {
 export function notifyDropout(sessionId) {
   return authedPost('/api/notify-change', { sessionId, kind: 'dropout' });
 }
+
+// After the user's own RSVP write:
+//   'contingent' → they just went "in if we hit N": heads-up to MAYBE/UNDECIDED,
+//                  plus "you're confirmed" to anyone the trigger resolved.
+//   'resolve'    → they went IN: only the "you're confirmed" check.
+// Best-effort — never block the UI on it.
+export function notifyRsvp(sessionId, kind) {
+  return authedPost('/api/notify-change', { sessionId, kind });
+}

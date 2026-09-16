@@ -2,7 +2,7 @@
 // with `Authorization: Bearer <CRON_SECRET>`. For each upcoming session it fires
 // the group's reminder ladder (offsets-before-start) to members who haven't
 // committed (undecided + maybe). Idempotent via notification_deliveries.
-import { admin, sendToSubscriptions, subscriptionsForUsers, formatWhen } from './_lib.js';
+import { admin, sendToSubscriptions, subscriptionsForUsers, formatWhen, notifyResolvedContingents } from './_lib.js';
 
 const GRACE_MS = 30 * 60 * 1000;          // fire a step up to 30 min late (tolerate cron gaps)
 const WINDOW_MS = 8 * 24 * 3600 * 1000;   // only look at sessions starting within 8 days
@@ -17,6 +17,11 @@ export default async function handler(req, res) {
   const now = Date.now();
 
   try {
+    // Safety net: "you're confirmed" pushes for contingents the DB trigger
+    // resolved but whose client-side notify call never landed (offline, tab
+    // closed mid-write). The delivery table dedupes, so this is cheap.
+    const confirmedSent = await sweepResolvedContingents(db, now);
+
     // Groups with a non-empty reminder ladder.
     const { data: settings, error: setErr } = await db
       .from('group_notification_settings')
@@ -27,7 +32,7 @@ export default async function handler(req, res) {
       if ((s.reminder_offsets || []).length) cfgByGroup[s.group_id] = s;
     }
     const groupIds = Object.keys(cfgByGroup);
-    if (!groupIds.length) return res.status(200).json({ ok: true, sent: 0, note: 'no ladders' });
+    if (!groupIds.length) return res.status(200).json({ ok: true, sent: 0, contingent_confirmed: confirmedSent, note: 'no ladders' });
 
     // Per-group timezone (from the schedule) + display name.
     const tzByGroup = {};
@@ -64,7 +69,7 @@ export default async function handler(req, res) {
     }
 
     const cancelled = await runAutoCancel(db, now);
-    return res.status(200).json({ ok: true, sent: totalSent, auto_cancelled: cancelled });
+    return res.status(200).json({ ok: true, sent: totalSent, auto_cancelled: cancelled, contingent_confirmed: confirmedSent });
   } catch (e) {
     console.error('[dispatch-reminders] error', e);
     return res.status(500).json({ error: e.message || String(e) });
@@ -199,4 +204,28 @@ async function runAutoCancel(db, now) {
     }
   }
   return cancelledCount;
+}
+
+// Resolved-but-maybe-unnotified contingents on upcoming sessions. Every row
+// here already has status 'in'; notifyResolvedContingents skips anyone with a
+// delivery record, so only genuinely missed pushes go out.
+async function sweepResolvedContingents(db, now) {
+  const { data: rows } = await db
+    .from('rsvps')
+    .select('session_id, session:sessions(starts_at, cancelled_at)')
+    .eq('status', 'in')
+    .not('contingent_resolved_at', 'is', null);
+  const ids = new Set();
+  for (const r of rows || []) {
+    const s = r.session;
+    if (!s || s.cancelled_at) continue;
+    if (new Date(s.starts_at).getTime() < now) continue;
+    ids.add(r.session_id);
+  }
+  let sent = 0;
+  for (const sid of ids) {
+    try { sent += await notifyResolvedContingents(db, sid); }
+    catch (e) { console.error('[contingent-sweep] failed', sid, e?.message || e); }
+  }
+  return sent;
 }
