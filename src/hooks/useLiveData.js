@@ -163,12 +163,13 @@ export function useLiveData(enabled) {
 
       const rsvpsBySession = {};
       if (sessionIds.length) {
-        const { data: rows, error: rErr } = await supabase
+        // Paged + ordered: never let the 1000-row cap drop anyone's check-in.
+        const rows = await data.fetchAllRows(() => supabase
           .from('rsvps')
-          .select('session_id, status, party_size, contingent_min, contingent_resolved_at, user:profiles(id, full_name)')
-          .in('session_id', sessionIds);
-        if (rErr) throw rErr;
-        for (const r of rows || []) {
+          .select('id, session_id, status, party_size, contingent_min, contingent_resolved_at, user:profiles(id, full_name)')
+          .in('session_id', sessionIds)
+          .order('id', { ascending: true }));
+        for (const r of rows) {
           (rsvpsBySession[r.session_id] ||= []).push(r);
         }
       }

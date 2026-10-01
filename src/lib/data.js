@@ -219,16 +219,39 @@ export async function generateSessions(groupId, schedule, horizon) {
 
 // ---- Sessions -------------------------------------------------------------
 
+// PostgREST silently caps every response at 1000 rows (Supabase default), and
+// without an ORDER BY the rows that fall off are the most recently updated —
+// which is exactly how a fresh check-in "disappeared" once the rsvps table
+// grew past 1000. Page through with range() so no read is ever truncated.
+const PAGE = 1000;
+export async function fetchAllRows(buildQuery) {
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return out;
+}
+
+// How far back the feed reaches. Sessions older than this (and their rsvps)
+// aren't loaded — the carousel only needs recent history.
+export const HISTORY_DAYS = 30;
+export function historyCutoffIso() {
+  return new Date(Date.now() - HISTORY_DAYS * 24 * 3600 * 1000).toISOString();
+}
+
 // Upcoming + recent sessions across the given groups, soonest first.
 export async function listSessions(groupIds) {
   if (!groupIds || groupIds.length === 0) return [];
-  const { data, error } = await supabase
+  return fetchAllRows(() => supabase
     .from('sessions')
     .select('*')
     .in('group_id', groupIds)
-    .order('starts_at', { ascending: true });
-  if (error) throw error;
-  return data || [];
+    .gte('starts_at', historyCutoffIso())
+    .order('starts_at', { ascending: true })
+    .order('id', { ascending: true }));
 }
 
 export async function createSession({ groupId, startsAt, location = null, courtCount = 1, isAdhoc = true, invitedUserIds = null }) {
