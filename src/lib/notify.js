@@ -47,3 +47,9 @@ export function notifyDropout(sessionId) {
 export function notifyRsvp(sessionId, kind) {
   return authedPost('/api/notify-change', { sessionId, kind });
 }
+
+// Group-level announcement (admin): 'pause' | 'resume'. Everyone in the group
+// except the admin who acted. Best-effort.
+export function notifyGroup(groupId, kind) {
+  return authedPost('/api/notify-change', { groupId, kind });
+}

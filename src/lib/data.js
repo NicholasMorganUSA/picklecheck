@@ -78,6 +78,20 @@ export async function updateGroup(groupId, patch) {
   return data;
 }
 
+// Admin-only RPCs. Pause cancels every upcoming session ("Group paused") and
+// stops the nightly generator; resume restores those sessions and tops the
+// horizon back up. Both return a session count.
+export async function pauseGroup(groupId) {
+  const { data, error } = await supabase.rpc('pause_group', { p_group_id: groupId });
+  if (error) throw error;
+  return data;
+}
+export async function resumeGroup(groupId) {
+  const { data, error } = await supabase.rpc('resume_group', { p_group_id: groupId });
+  if (error) throw error;
+  return data;
+}
+
 // Admin-only (RLS: groups_delete_admin). Cascades to members, schedules,
 // sessions, rsvps, invites, and notification settings.
 export async function deleteGroup(groupId) {

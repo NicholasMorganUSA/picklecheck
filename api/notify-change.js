@@ -21,8 +21,13 @@ export default async function handler(req, res) {
   const uid = await userIdFromRequest(req);
   if (!uid) return res.status(401).json({ error: 'not signed in' });
 
-  const { sessionId, kind } = readJsonBody(req);
+  const { sessionId, groupId, kind } = readJsonBody(req);
   const KINDS = ['new', 'cancel', 'change', 'watch', 'dropout', 'contingent', 'resolve'];
+  const GROUP_KINDS = ['pause', 'resume'];
+  if (GROUP_KINDS.includes(kind)) {
+    if (!groupId) return res.status(400).json({ error: 'groupId required' });
+    return notifyGroupLevel(req, res, uid, groupId, kind);
+  }
   if (!sessionId || !KINDS.includes(kind)) {
     return res.status(400).json({ error: `sessionId and kind (${KINDS.join('|')}) required` });
   }
@@ -176,6 +181,40 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, sent });
   } catch (e) {
     console.error('[notify-change] error', e);
+    return res.status(500).json({ error: e.message || String(e) });
+  }
+}
+
+// Group-level announcements (admin): the group was paused / resumed. One push
+// to every member except the admin who acted; logged with no session.
+async function notifyGroupLevel(req, res, uid, groupId, kind) {
+  const db = admin();
+  try {
+    const { data: mem } = await db
+      .from('group_members').select('role')
+      .eq('group_id', groupId).eq('user_id', uid).maybeSingle();
+    if (!mem) return res.status(403).json({ error: 'not a group member' });
+    if (mem.role !== 'admin') return res.status(403).json({ error: 'not a group admin' });
+
+    const { data: grp } = await db.from('groups').select('name').eq('id', groupId).single();
+    const gname = grp?.name || 'PickleCheck';
+    const { data: members } = await db.from('group_members').select('user_id').eq('group_id', groupId);
+    const audience = (members || []).map((m) => m.user_id).filter((id) => id !== uid);
+    if (!audience.length) return res.status(200).json({ ok: true, sent: 0 });
+
+    const payload = kind === 'pause'
+      ? { title: `⏸ ${gname} is paused`, body: 'Upcoming sessions are cancelled for now. You\u2019ll get a push the moment it\u2019s back.', tag: `pause-${groupId}`, url: '/' }
+      : { title: `▶️ ${gname} is back`, body: 'Sessions are open again — tap to check in.', tag: `pause-${groupId}`, url: '/', sticky: true };
+
+    const subsByUser = await subscriptionsForUsers(db, audience);
+    let sent = 0;
+    for (const auId of audience) {
+      sent += await sendToSubscriptions(db, subsByUser[auId] || [], payload);
+      await db.from('notification_deliveries').insert({ kind, session_id: null, user_id: auId });
+    }
+    return res.status(200).json({ ok: true, sent });
+  } catch (e) {
+    console.error('[notify-change] group-level error', e);
     return res.status(500).json({ error: e.message || String(e) });
   }
 }

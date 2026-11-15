@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/auth.jsx';
 import { supabase } from '../lib/supabase.js';
 import * as data from '../lib/data.js';
-import { notifySessionChange, notifyRsvp } from '../lib/notify.js';
+import { notifySessionChange, notifyRsvp, notifyGroup } from '../lib/notify.js';
 
 const MS_HOUR = 3600 * 1000;
 
@@ -294,6 +294,20 @@ export function useLiveData(enabled) {
     return n;
   }, [load]);
 
+  const pauseGroup = useCallback(async (gid) => {
+    const n = await data.pauseGroup(gid);
+    notifyGroup(gid, 'pause').catch((e) => console.warn('[notify] pause alert failed:', e));
+    await load();
+    return n;
+  }, [load]);
+
+  const resumeGroup = useCallback(async (gid) => {
+    const n = await data.resumeGroup(gid);
+    notifyGroup(gid, 'resume').catch((e) => console.warn('[notify] resume alert failed:', e));
+    await load();
+    return n;
+  }, [load]);
+
   const deleteGroup = useCallback(async (gid) => {
     await data.deleteGroup(gid);
     await load();
@@ -315,5 +329,5 @@ export function useLiveData(enabled) {
     }
   }, [load]);
 
-  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, alerts, dismissAlerts, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, joinByCode, saveGroup, deleteGroup, leaveGroup, saveSchedule, generateSessions };
+  return { groups, sessions, membersByGroup, schedulesByGroup, loading, error, reload: load, alerts, dismissAlerts, setRsvp, createGroup, createSession, updateSession, deleteSession, createInvite, joinGroup, joinByCode, saveGroup, deleteGroup, leaveGroup, pauseGroup, resumeGroup, saveSchedule, generateSessions };
 }

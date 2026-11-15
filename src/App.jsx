@@ -1340,12 +1340,18 @@ const GroupsMenu = ({ open, onClose, onManage, onDetails, visibleGroups, setVisi
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="text-base font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{g.name}</div>
-                    {g.role === 'admin' && (
-                      <span className="flex items-center gap-1 text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded flex-shrink-0"
-                        style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500' }}>
-                        <Shield size={10} />ADMIN
-                      </span>
-                    )}
+                    <span className="flex items-center gap-1 flex-shrink-0">
+                      {g.paused_at && (
+                        <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(252,211,77,0.14)', color: '#fcd34d' }}>PAUSED</span>
+                      )}
+                      {g.role === 'admin' && (
+                        <span className="flex items-center gap-1 text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(197,229,0,0.12)', color: '#c5e500' }}>
+                          <Shield size={10} />ADMIN
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <div className="text-[11px] text-zinc-500">{g.schedule || g.location || 'No schedule yet'}</div>
                   <div className="text-[11px] text-zinc-600 mt-0.5">{g.members ?? 0} members</div>
@@ -1358,7 +1364,7 @@ const GroupsMenu = ({ open, onClose, onManage, onDetails, visibleGroups, setVisi
                   }} />
               </button>
               {(() => {
-                const showAdd = isDemo || g.role === 'admin' || g.allow_adhoc;
+                const showAdd = !g.paused_at && (isDemo || g.role === 'admin' || g.allow_adhoc);
                 const showInvite = (g.role === 'admin' || g.allow_member_invites) && !!onInviteMember;
                 const showManage = g.role === 'admin';
                 const showDetails = !showManage && !isDemo && !!onDetails;
@@ -2606,7 +2612,7 @@ const GroupCodeRow = ({ code, onChange }) => {
   );
 };
 
-const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete, onLeave }) => {
+const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, meName = MOCK_USER.name, isDemo = false, schedule = null, onSaveSchedule, onGenerateSessions, onDelete, onLeave, paused = false, onPause, onResume }) => {
   const g = GROUP_INFO[groupId] || {};
   const s = settings || { name: g.name, location: g.location, allowAdhoc: true, isPublic: false, horizon: 4, schedule: [] };
   // Defaults guard against partial settings objects (prevents schedule.map crashes).
@@ -2621,6 +2627,22 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
   const [delBusy, setDelBusy] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
+  const [confirmPause, setConfirmPause] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseMsg, setPauseMsg] = useState(null);
+  const doPause = async () => {
+    if (!confirmPause) { setConfirmPause(true); return; }
+    setPauseBusy(true); setPauseMsg(null);
+    try { const n = await onPause?.(); setPauseMsg(`Paused. ${n ?? 0} upcoming ${n === 1 ? 'session' : 'sessions'} cancelled — members have been told.`); }
+    catch (e) { setPauseMsg(e.message || 'Could not pause'); }
+    finally { setPauseBusy(false); setConfirmPause(false); }
+  };
+  const doResume = async () => {
+    setPauseBusy(true); setPauseMsg(null);
+    try { const n = await onResume?.(); setPauseMsg(`Back on. ${n ?? 0} ${n === 1 ? 'session' : 'sessions'} restored — members have been told.`); }
+    catch (e) { setPauseMsg(e.message || 'Could not resume'); }
+    finally { setPauseBusy(false); }
+  };
   // Only show "Leave group" if there's another admin to keep running it — an
   // admin leaving as the last admin would orphan the group.
   const adminCount = (members || []).filter((m) => m.role === 'admin').length;
@@ -2633,11 +2655,26 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
         </button>
         <div className="min-w-0">
           <div className="text-xl font-bold tracking-tight truncate" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>{name}</div>
-          <div className="flex items-center gap-1 text-[10px] font-bold tracking-wider mt-0.5" style={{ color: '#c5e500' }}>
-            <Shield size={10} />ADMIN
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-wider mt-0.5">
+            <span className="flex items-center gap-1" style={{ color: '#c5e500' }}><Shield size={10} />ADMIN</span>
+            {paused && <span style={{ color: '#fcd34d' }}>· PAUSED</span>}
           </div>
         </div>
       </div>
+      {paused && (
+        <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(252,211,77,0.10)', border: '1px solid rgba(252,211,77,0.4)' }}>
+          <div className="text-sm font-bold" style={{ color: '#fcd34d' }}>This group is paused</div>
+          <div className="text-[12px] mt-1 leading-snug" style={{ color: 'var(--text-secondary)' }}>
+            Upcoming sessions are cancelled and nothing new is being scheduled. Members, the code, and your settings are all kept.
+          </div>
+          <button onClick={doResume} disabled={pauseBusy}
+            className="w-full mt-3 py-3 rounded-2xl text-sm font-bold disabled:opacity-60"
+            style={{ background: '#c5e500', color: '#1a1f00' }}>
+            {pauseBusy ? 'Resuming…' : 'Resume group'}
+          </button>
+          {pauseMsg && <div className="text-[12px] mt-2" style={{ color: 'var(--text-secondary)' }}>{pauseMsg}</div>}
+        </div>
+      )}
       <SettingsSection title="Group">
         <EditableRow label="Name" value={name} onSave={(v) => update({ name: v })} />
         <EditableRow label="Location" value={location} onSave={(v) => update({ location: v })} />
@@ -2736,6 +2773,21 @@ const GroupSettingsView = ({ groupId, onBack, settings, update, members = null, 
           <Plus size={13} />Invite member
         </button>
       </SettingsSection>
+      {!isDemo && !paused && (
+        <SettingsSection title="Pause group">
+          <div className="px-4 pt-3 pb-2 text-[11px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+            Going dormant for a while? Pausing cancels every upcoming session, stops new ones from being scheduled, and tells members once. Nothing is deleted — resume anytime and the sessions come back.
+          </div>
+          <div className="px-4 pb-4">
+            <button onClick={doPause} disabled={pauseBusy}
+              className="w-full py-3 rounded-2xl text-sm font-semibold disabled:opacity-60"
+              style={{ background: confirmPause ? 'rgba(252,211,77,0.22)' : 'var(--bg-input)', color: confirmPause ? '#fcd34d' : 'var(--text-strong)', border: confirmPause ? '1px solid rgba(252,211,77,0.5)' : '1px solid var(--border-medium)' }}>
+              {pauseBusy ? 'Pausing…' : confirmPause ? `Tap again to pause ${name}` : 'Pause group'}
+            </button>
+            {pauseMsg && <div className="text-[12px] mt-2" style={{ color: 'var(--text-secondary)' }}>{pauseMsg}</div>}
+          </div>
+        </SettingsSection>
+      )}
       {canLeave && (
         <button
           disabled={leaveBusy}
@@ -3044,7 +3096,10 @@ export default function App({ account = null }) {
   // The feed shows sessions from groups the user has toggled visible.
   const allGroupIds = Object.keys(groupInfo);
   const isFiltered = allGroupIds.length > 0 && allGroupIds.some((id) => !visibleGroups.has(id));
-  const filtered = sessions.filter(s => visibleGroups.has(s.groupId));
+  // Paused groups drop out of the feed entirely (their sessions are all
+  // cancelled anyway); a notice above the carousel says so.
+  const pausedGroups = Object.values(groupInfo).filter((g) => g.paused_at && visibleGroups.has(g.id));
+  const filtered = sessions.filter(s => visibleGroups.has(s.groupId) && !groupInfo[s.groupId]?.paused_at);
   const safeIdx = Math.min(currentIdx, filtered.length - 1);
   const filteredDefaultIdx = filtered.findIndex(s => !s.past);
   const atDefault = safeIdx === filteredDefaultIdx;
@@ -3513,7 +3568,22 @@ export default function App({ account = null }) {
           ) : (
             live.loading ? (
               <div className="rounded-3xl px-6 py-12 text-center text-sm" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)', color: 'var(--text-muted)' }}>Loading your groups…</div>
-            ) : live.error ? (
+            ) : (
+            <>
+            {pausedGroups.length > 0 && (
+              <div className="rounded-2xl px-4 py-3 flex items-start gap-3" style={{ background: 'rgba(252,211,77,0.10)', border: '1px solid rgba(252,211,77,0.35)' }}>
+                <span className="text-lg leading-none">⏸</span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-bold" style={{ color: '#fcd34d' }}>
+                    {pausedGroups.map((g) => g.name).join(', ')} {pausedGroups.length === 1 ? 'is' : 'are'} paused
+                  </div>
+                  <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                    No sessions until an admin resumes. You&rsquo;ll get a push when it&rsquo;s back.
+                  </div>
+                </div>
+              </div>
+            )}
+            {live.error ? (
               <EmptyState title="Couldn’t load your data" body={live.error} cta="Retry" onCta={live.reload} />
             ) : (live.groups || []).length === 0 ? (
               <EmptyState title="Get started" body="Create your own recurring crew, or find a public group near you to join." cta="Create a group" onCta={() => setCreateGroupOpen(true)} cta2="Find a group" onCta2={() => setDiscoverOpen(true)} />
@@ -3536,6 +3606,8 @@ export default function App({ account = null }) {
                 onUncancel={() => currentSession && live.updateSession(currentSession.id, { cancelled_at: null, cancel_reason: null })}
                 onDelete={() => currentSession && live.deleteSession(currentSession.id)}
               />
+            )}
+            </>
             )
           ))}
           {view === 'week' && <WeekView sessions={filtered.filter(s => !s.past)} onSelect={goToSessionById} />}
@@ -3575,6 +3647,9 @@ export default function App({ account = null }) {
                 onGenerateSessions={async (r) => { const s = await live.saveSchedule(activeGroupId, r); return live.generateSessions(activeGroupId, s, ag.horizon ?? 5); }}
                 onDelete={async () => { await live.deleteGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
                 onLeave={async () => { await live.leaveGroup(activeGroupId); setActiveGroupId(null); setView('today'); }}
+                paused={!!ag.paused_at}
+                onPause={() => live.pauseGroup(activeGroupId)}
+                onResume={() => live.resumeGroup(activeGroupId)}
                 update={(patch) => {
                   const db = {};
                   if ('name' in patch) db.name = patch.name;
