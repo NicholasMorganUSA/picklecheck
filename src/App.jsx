@@ -3291,16 +3291,35 @@ export default function App({ account = null }) {
     }
   }, [isDemo, safeIdx, live.sessions, visibleGroups]);
 
-  // Real app: on first load, land on the next upcoming session.
+  // Real app: on first load, land on the next upcoming session. Index into
+  // `filtered` (what the carousel renders), not live.sessions — hidden or
+  // paused groups are missing from the feed, so an index into the full list
+  // points at the wrong card.
   const didInitIdx = useRef(false);
   useEffect(() => {
     if (isDemo || didInitIdx.current) return;
-    if (live.sessions.length > 0) {
-      const idx = live.sessions.findIndex((s) => !s.past);
+    if (filtered.length > 0) {
+      const idx = filtered.findIndex((s) => !s.past);
       setCurrentIdx(idx >= 0 ? idx : 0);
       didInitIdx.current = true;
     }
-  }, [isDemo, live.sessions]);
+  }, [isDemo, filtered]);
+
+  // Coming back to a PWA that sat in the background: if the card we were on
+  // has since passed, snap to the next upcoming session.
+  useEffect(() => {
+    if (isDemo) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const cur = filtered[safeIdx];
+      if (cur && cur.past) {
+        const idx = filtered.findIndex((s) => !s.past);
+        if (idx >= 0) goTo(idx);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isDemo, filtered, safeIdx]);
 
   // Deep link from a push tap: /?session=<id>[&rsvp=in|out|maybe]. Jump to that
   // session, apply the tapped RSVP, then strip the params so refresh is clean.
