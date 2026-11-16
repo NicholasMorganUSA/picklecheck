@@ -3097,8 +3097,7 @@ export default function App({ account = null }) {
   const allGroupIds = Object.keys(groupInfo);
   const isFiltered = allGroupIds.length > 0 && allGroupIds.some((id) => !visibleGroups.has(id));
   // Paused groups drop out of the feed entirely (their sessions are all
-  // cancelled anyway); a notice above the carousel says so.
-  const pausedGroups = Object.values(groupInfo).filter((g) => g.paused_at && visibleGroups.has(g.id));
+  // cancelled anyway). The Groups menu and Manage page show the PAUSED state.
   const filtered = sessions.filter(s => visibleGroups.has(s.groupId) && !groupInfo[s.groupId]?.paused_at);
   const safeIdx = Math.min(currentIdx, filtered.length - 1);
   const filteredDefaultIdx = filtered.findIndex(s => !s.past);
@@ -3589,19 +3588,6 @@ export default function App({ account = null }) {
               <div className="rounded-3xl px-6 py-12 text-center text-sm" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-medium)', color: 'var(--text-muted)' }}>Loading your groups…</div>
             ) : (
             <>
-            {pausedGroups.length > 0 && (
-              <div className="rounded-2xl px-4 py-3 flex items-start gap-3" style={{ background: 'rgba(252,211,77,0.10)', border: '1px solid rgba(252,211,77,0.35)' }}>
-                <span className="text-lg leading-none">⏸</span>
-                <div className="min-w-0">
-                  <div className="text-[13px] font-bold" style={{ color: '#fcd34d' }}>
-                    {pausedGroups.map((g) => g.name).join(', ')} {pausedGroups.length === 1 ? 'is' : 'are'} paused
-                  </div>
-                  <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                    No sessions until an admin resumes. You&rsquo;ll get a push when it&rsquo;s back.
-                  </div>
-                </div>
-              </div>
-            )}
             {live.error ? (
               <EmptyState title="Couldn’t load your data" body={live.error} cta="Retry" onCta={live.reload} />
             ) : (live.groups || []).length === 0 ? (
