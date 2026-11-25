@@ -2086,7 +2086,7 @@ const SettingsView = ({ onBack, settings, update, theme, setTheme, fontScale, se
         {account ? (
           <>
             <SettingsRow label="Email" value={displayEmail} />
-            <SettingsRow label="Account" value="Signed in with Google" />
+            <SettingsRow label="Account" value={account.provider === 'google' ? 'Signed in with Google' : 'Email & password'} />
           </>
         ) : (
           <>

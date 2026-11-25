@@ -1,6 +1,7 @@
 import { useAuth } from './lib/auth.jsx';
 import { useProfile } from './hooks/useProfile.js';
 import SignIn from './components/SignIn.jsx';
+import SetPasswordScreen from './components/SetPasswordScreen.jsx';
 import App from './App.jsx';
 
 function Splash() {
@@ -18,14 +19,16 @@ function Splash() {
 // Gate for the real (authenticated) app:
 //   auth loading   -> splash
 //   no user        -> Google sign-in screen
+//   reset link     -> set-a-new-password screen (user is signed in by the link)
 //   profile loading -> splash
 //   signed in      -> the app, fed a real `account` (vs the public /demo, which gets none)
 export default function AppGate() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, recovery, signOut } = useAuth();
   const { profile, loading: profileLoading, updateName } = useProfile();
 
   if (loading) return <Splash />;
   if (!user) return <SignIn />;
+  if (recovery) return <SetPasswordScreen />;
   if (profileLoading) return <Splash />;
 
   const meta = user.user_metadata || {};
@@ -35,6 +38,7 @@ export default function AppGate() {
     name: profile?.full_name || meta.full_name || meta.name || user.email,
     avatarUrl: profile?.avatar_url || meta.avatar_url || null,
     isSuperadmin: !!profile?.is_superadmin,
+    provider: user.app_metadata?.provider || 'email',
     updateName,
     signOut,
   };
